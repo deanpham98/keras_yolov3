@@ -197,173 +197,254 @@ def yolo_eval(yolo_outputs,
     return boxes_, scores_, classes_
 
 
-def preprocess_true_boxes(true_boxes, input_shape, anchors, num_classes):
-    '''Preprocess true boxes to training input format
+def preprocess_true_boxes(true_boxes, anchors, image_size):
+    """Find detector in YOLO where ground truth box should appear.
 
     Parameters
     ----------
-    true_boxes: array, shape=(m, T, 5)
-        Absolute x_min, y_min, x_max, y_max, class_code reletive to input_shape.
-    input_shape: array-like, hw, multiples of 32
-    anchors: array, shape=(N, 2), wh
-    num_classes: integer
+    true_boxes : array
+        List of ground truth boxes in form of relative x, y, w, h, class.
+        Relative coordinates are in the range [0, 1] indicating a percentage
+        of the original image dimensions.
+    anchors : array
+        List of anchors in form of w, h.
+        Anchors are assumed to be in the range [0, conv_size] where conv_size
+        is the spatial dimension of the final convolutional features.
+    image_size : array-like
+        List of image dimensions in form of h, w in pixels.
 
     Returns
     -------
-    y_true: list of array, shape like yolo_outputs, xywh are reletive value
+    detectors_mask : array
+        0/1 mask for detectors in [conv_height, conv_width, num_anchors, 1]
+        that should be compared with a matching ground truth box.
+    matching_true_boxes: array
+        Same shape as detectors_mask with the corresponding ground truth box
+        adjusted for comparison with predicted parameters at training time.
+    """
+    height, width = image_size
+    num_anchors = len(anchors)
+    # Downsampling factor of 5x 2-stride max_pools == 32.
+    # TODO: Remove hardcoding of downscaling calculations.
+    assert height % 32 == 0, 'Image sizes in YOLO_v2 must be multiples of 32.'
+    assert width % 32 == 0, 'Image sizes in YOLO_v2 must be multiples of 32.'
+    conv_height = height // 32
+    conv_width = width // 32
+    num_box_params = true_boxes.shape[1]
+    detectors_mask = np.zeros(
+        (conv_height, conv_width, num_anchors, 1), dtype=np.float32)
+    matching_true_boxes = np.zeros(
+        (conv_height, conv_width, num_anchors, num_box_params),
+        dtype=np.float32)
 
-    '''
-    anchor_mask = [[6,7,8], [3,4,5], [0,1,2]]
+    for box in true_boxes:
+        # scale box to convolutional feature spatial dimensions
+        box_class = box[4:5]
+        box = box[0:4] * np.array(
+            [conv_width, conv_height, conv_width, conv_height])
+        i = np.floor(box[1]).astype('int')
+        j = np.floor(box[0]).astype('int')
+        best_iou = 0
+        best_anchor = 0
+        for k, anchor in enumerate(anchors):
+            # Find IOU between box shifted to origin and anchor box.
+            box_maxes = box[2:4] / 2.
+            box_mins = -box_maxes
+            anchor_maxes = (anchor / 2.)
+            anchor_mins = -anchor_maxes
 
-    true_boxes = np.array(true_boxes, dtype='float32')
-    input_shape = np.array(input_shape, dtype='int32')
-    boxes_xy = (true_boxes[..., 0:2] + true_boxes[..., 2:4]) // 2
-    boxes_wh = true_boxes[..., 2:4] - true_boxes[..., 0:2]
-    true_boxes[..., 0:2] = boxes_xy/input_shape[::-1]
-    true_boxes[..., 2:4] = boxes_wh/input_shape[::-1]
+            intersect_mins = np.maximum(box_mins, anchor_mins)
+            intersect_maxes = np.minimum(box_maxes, anchor_maxes)
+            intersect_wh = np.maximum(intersect_maxes - intersect_mins, 0.)
+            intersect_area = intersect_wh[0] * intersect_wh[1]
+            box_area = box[2] * box[3]
+            anchor_area = anchor[0] * anchor[1]
+            iou = intersect_area / (box_area + anchor_area - intersect_area)
+            if iou > best_iou:
+                best_iou = iou
+                best_anchor = k
 
-    m = true_boxes.shape[0]
-    grid_shapes = [input_shape//{0:32, 1:16, 2:8}[l] for l in range(3)]
-    y_true = [np.zeros((m,grid_shapes[l][0],grid_shapes[l][1],len(anchor_mask[l]),5+num_classes),
-        dtype='float32') for l in range(3)]
+        if best_iou > 0:
+            detectors_mask[i, j, best_anchor] = 1
+            adjusted_box = np.array(
+                [
+                    box[0] - j, box[1] - i,
+                    np.log(box[2] / anchors[best_anchor][0]),
+                    np.log(box[3] / anchors[best_anchor][1]), box_class
+                ],
+                dtype=np.float32)
+            matching_true_boxes[i, j, best_anchor] = adjusted_box
+    return detectors_mask, matching_true_boxes
 
-    # Expand dim to apply broadcasting.
-    anchors = np.expand_dims(anchors, 0)
-    anchor_maxes = anchors / 2.
-    anchor_mins = -anchor_maxes
-    valid_mask = boxes_wh[..., 0]>0
 
-    for b in range(m):
-        # Discard zero rows.
-        wh = boxes_wh[b, valid_mask[b]]
-        # Expand dim to apply broadcasting.
-        wh = np.expand_dims(wh, -2)
-        box_maxes = wh / 2.
-        box_mins = -box_maxes
 
-        intersect_mins = np.maximum(box_mins, anchor_mins)
-        intersect_maxes = np.minimum(box_maxes, anchor_maxes)
-        intersect_wh = np.maximum(intersect_maxes - intersect_mins, 0.)
-        intersect_area = intersect_wh[..., 0] * intersect_wh[..., 1]
-        box_area = wh[..., 0] * wh[..., 1]
-        anchor_area = anchors[..., 0] * anchors[..., 1]
-        iou = intersect_area / (box_area + anchor_area - intersect_area)
-
-        # Find best anchor for each true box
-        best_anchor = np.argmax(iou, axis=-1)
-
-        for t, n in enumerate(best_anchor):
-            for l in range(3):
-                if n in anchor_mask[l]:
-                    i = np.floor(true_boxes[b,t,0]*grid_shapes[l][1]).astype('int32')
-                    j = np.floor(true_boxes[b,t,1]*grid_shapes[l][0]).astype('int32')
-                    n = anchor_mask[l].index(n)
-                    c = true_boxes[b,t, 4].astype('int32')
-                    y_true[l][b, j, i, n, 0:4] = true_boxes[b,t, 0:4]
-                    y_true[l][b, j, i, n, 4] = 1
-                    y_true[l][b, j, i, n, 5+c] = 1
-                    break
-
-    return y_true
-
-def box_iou(b1, b2):
-    '''Return iou tensor
+def yolo_loss(args,
+              anchors,
+              num_classes,
+              rescore_confidence=False,
+              print_loss=False):
+    """YOLO localization loss function.
 
     Parameters
     ----------
-    b1: tensor, shape=(i1,...,iN, 4), xywh
-    b2: tensor, shape=(j, 4), xywh
+    yolo_output : tensor
+        Final convolutional layer features.
+
+    true_boxes : tensor
+        Ground truth boxes tensor with shape [batch, num_true_boxes, 5]
+        containing box x_center, y_center, width, height, and class.
+
+    detectors_mask : array
+        0/1 mask for detector positions where there is a matching ground truth.
+
+    matching_true_boxes : array
+        Corresponding ground truth boxes for positive detector positions.
+        Already adjusted for conv height and width.
+
+    anchors : tensor
+        Anchor boxes for model.
+
+    num_classes : int
+        Number of object classes.
+
+    rescore_confidence : bool, default=False
+        If true then set confidence target to IOU of best predicted box with
+        the closest matching ground truth box.
+
+    print_loss : bool, default=False
+        If True then use a tf.Print() to print the loss components.
 
     Returns
     -------
-    iou: tensor, shape=(i1,...,iN, j)
+    mean_loss : float
+        mean localization loss across minibatch
+    """
+    (yolo_output, true_boxes, detectors_mask, matching_true_boxes) = args
+    num_anchors = len(anchors)
+    object_scale = 5
+    no_object_scale = 1
+    class_scale = 1
+    coordinates_scale = 1
+    pred_xy, pred_wh, pred_confidence, pred_class_prob = yolo_head(
+        yolo_output, anchors, num_classes)
 
-    '''
+    # Unadjusted box predictions for loss.
+    # TODO: Remove extra computation shared with yolo_head.
+    yolo_output_shape = K.shape(yolo_output)
+    feats = K.reshape(yolo_output, [
+        -1, yolo_output_shape[1], yolo_output_shape[2], num_anchors,
+        num_classes + 5
+    ])
+    pred_boxes = K.concatenate(
+        (K.sigmoid(feats[..., 0:2]), feats[..., 2:4]), axis=-1)
 
-    # Expand dim to apply broadcasting.
-    b1 = K.expand_dims(b1, -2)
-    b1_xy = b1[..., :2]
-    b1_wh = b1[..., 2:4]
-    b1_wh_half = b1_wh/2.
-    b1_mins = b1_xy - b1_wh_half
-    b1_maxes = b1_xy + b1_wh_half
+    # TODO: Adjust predictions by image width/height for non-square images?
+    # IOUs may be off due to different aspect ratio.
 
-    # Expand dim to apply broadcasting.
-    b2 = K.expand_dims(b2, 0)
-    b2_xy = b2[..., :2]
-    b2_wh = b2[..., 2:4]
-    b2_wh_half = b2_wh/2.
-    b2_mins = b2_xy - b2_wh_half
-    b2_maxes = b2_xy + b2_wh_half
+    # Expand pred x,y,w,h to allow comparison with ground truth.
+    # batch, conv_height, conv_width, num_anchors, num_true_boxes, box_params
+    pred_xy = K.expand_dims(pred_xy, 4)
+    pred_wh = K.expand_dims(pred_wh, 4)
 
-    intersect_mins = K.maximum(b1_mins, b2_mins)
-    intersect_maxes = K.minimum(b1_maxes, b2_maxes)
+    pred_wh_half = pred_wh / 2.
+    pred_mins = pred_xy - pred_wh_half
+    pred_maxes = pred_xy + pred_wh_half
+
+    true_boxes_shape = K.shape(true_boxes)
+
+    # batch, conv_height, conv_width, num_anchors, num_true_boxes, box_params
+    true_boxes = K.reshape(true_boxes, [
+        true_boxes_shape[0], 1, 1, 1, true_boxes_shape[1], true_boxes_shape[2]
+    ])
+    true_xy = true_boxes[..., 0:2]
+    true_wh = true_boxes[..., 2:4]
+
+    # Find IOU of each predicted box with each ground truth box.
+    true_wh_half = true_wh / 2.
+    true_mins = true_xy - true_wh_half
+    true_maxes = true_xy + true_wh_half
+
+    intersect_mins = K.maximum(pred_mins, true_mins)
+    intersect_maxes = K.minimum(pred_maxes, true_maxes)
     intersect_wh = K.maximum(intersect_maxes - intersect_mins, 0.)
-    intersect_area = intersect_wh[..., 0] * intersect_wh[..., 1]
-    b1_area = b1_wh[..., 0] * b1_wh[..., 1]
-    b2_area = b2_wh[..., 0] * b2_wh[..., 1]
-    iou = intersect_area / (b1_area + b2_area - intersect_area)
+    intersect_areas = intersect_wh[..., 0] * intersect_wh[..., 1]
 
-    return iou
+    pred_areas = pred_wh[..., 0] * pred_wh[..., 1]
+    true_areas = true_wh[..., 0] * true_wh[..., 1]
+
+    union_areas = pred_areas + true_areas - intersect_areas
+    iou_scores = intersect_areas / union_areas
+
+    # Best IOUs for each location.
+    best_ious = K.max(iou_scores, axis=4)  # Best IOU scores.
+    best_ious = K.expand_dims(best_ious)
+
+    # A detector has found an object if IOU > thresh for some true box.
+    object_detections = K.cast(best_ious > 0.6, K.dtype(best_ious))
+
+    # TODO: Darknet region training includes extra coordinate loss for early
+    # training steps to encourage predictions to match anchor priors.
+
+    # Determine confidence weights from object and no_object weights.
+    # NOTE: YOLO does not use binary cross-entropy here.
+    no_object_weights = (no_object_scale * (1 - object_detections) *
+                         (1 - detectors_mask))
+    no_objects_loss = no_object_weights * K.square(-pred_confidence)
+
+    if rescore_confidence:
+        objects_loss = (object_scale * detectors_mask *
+                        K.square(best_ious - pred_confidence))
+    else:
+        objects_loss = (object_scale * detectors_mask *
+                        K.square(1 - pred_confidence))
+    confidence_loss = objects_loss + no_objects_loss
+
+    # Classification loss for matching detections.
+    # NOTE: YOLO does not use categorical cross-entropy loss here.
+    matching_classes = K.cast(matching_true_boxes[..., 4], 'int32')
+    matching_classes = K.one_hot(matching_classes, num_classes)
+    classification_loss = (class_scale * detectors_mask *
+                           K.square(matching_classes - pred_class_prob))
+
+    # Coordinate loss for matching detection boxes.
+    matching_boxes = matching_true_boxes[..., 0:4]
+    coordinates_loss = (coordinates_scale * detectors_mask *
+                        K.square(matching_boxes - pred_boxes))
+
+    confidence_loss_sum = K.sum(confidence_loss)
+    classification_loss_sum = K.sum(classification_loss)
+    coordinates_loss_sum = K.sum(coordinates_loss)
+    total_loss = 0.5 * (
+        confidence_loss_sum + classification_loss_sum + coordinates_loss_sum)
+    if print_loss:
+        total_loss = tf.Print(
+            total_loss, [
+                total_loss, confidence_loss_sum, classification_loss_sum,
+                coordinates_loss_sum
+            ],
+            message='yolo_loss, conf_loss, class_loss, box_coord_loss:')
+
+    return total_loss
 
 
+def yolo(inputs, anchors, num_classes):
+    """Generate a complete YOLO_v2 localization model."""
+    num_anchors = len(anchors)
+    body = yolo_body(inputs, num_anchors, num_classes)
+    outputs = yolo_head(body.output, anchors, num_classes)
+    return outputs
 
-def yolo_loss(args, anchors, num_classes, ignore_thresh=.5):
-    '''Return yolo_loss tensor
 
-    Parameters
-    ----------
-    yolo_outputs: list of tensor, the output of yolo_body
-    y_true: list of array, the output of preprocess_true_boxes
-    anchors: array, shape=(T, 2), wh
-    num_classes: integer
-    ignore_thresh: float, the iou threshold whether to ignore object confidence loss
+def yolo_filter_boxes(boxes, box_confidence, box_class_probs, threshold=.6):
+    """Filter YOLO boxes based on object and class confidence."""
+    box_scores = box_confidence * box_class_probs
+    box_classes = K.argmax(box_scores, axis=-1)
+    box_class_scores = K.max(box_scores, axis=-1)
+    prediction_mask = box_class_scores >= threshold
 
-    Returns
-    -------
-    loss: tensor, shape=(1,)
+    # TODO: Expose tf.boolean_mask to Keras backend?
+    boxes = tf.boolean_mask(boxes, prediction_mask)
+    scores = tf.boolean_mask(box_class_scores, prediction_mask)
+    classes = tf.boolean_mask(box_classes, prediction_mask)
+    return boxes, scores, classes
 
-    '''
-    yolo_outputs = args[:3]
-    y_true = args[3:]
-    anchor_mask = [[6,7,8], [3,4,5], [0,1,2]]
-    input_shape = K.cast(K.shape(yolo_outputs[0])[1:3] * 32, K.dtype(y_true[0]))
-    grid_shapes = [K.cast(K.shape(yolo_outputs[l])[1:3], K.dtype(y_true[0])) for l in range(3)]
-    loss = 0
-    m = K.shape(yolo_outputs[0])[0]
-
-    for l in range(3):
-        object_mask = y_true[l][..., 4:5]
-        true_class_probs = y_true[l][..., 5:]
-
-        pred_xy, pred_wh, pred_confidence, pred_class_probs = yolo_head(yolo_outputs[l],
-             anchors[anchor_mask[l]], num_classes, input_shape)
-        pred_box = K.concatenate([pred_xy, pred_wh])
-
-        # Darknet box loss.
-        xy_delta = (y_true[l][..., :2]-pred_xy)*grid_shapes[l][::-1]
-        wh_delta = K.log(y_true[l][..., 2:4]) - K.log(pred_wh)
-        # Avoid log(0)=-inf.
-        wh_delta = K.switch(object_mask, wh_delta, K.zeros_like(wh_delta))
-        box_delta = K.concatenate([xy_delta, wh_delta], axis=-1)
-        box_delta_scale = 2 - y_true[l][...,2:3]*y_true[l][...,3:4]
-
-        # Find ignore mask, iterate over each of batch.
-        ignore_mask = tf.TensorArray(K.dtype(y_true[0]), size=1, dynamic_size=True)
-        object_mask_bool = K.cast(object_mask, 'bool')
-        def loop_body(b, ignore_mask):
-            true_box = tf.boolean_mask(y_true[l][b,...,0:4], object_mask_bool[b,...,0])
-            iou = box_iou(pred_box[b], true_box)
-            best_iou = K.max(iou, axis=-1)
-            ignore_mask = ignore_mask.write(b, K.cast(best_iou<ignore_thresh, K.dtype(true_box)))
-            return b+1, ignore_mask
-        _, ignore_mask = K.control_flow_ops.while_loop(lambda b,*args: b<m, loop_body, [0, ignore_mask])
-        ignore_mask = ignore_mask.stack()
-        ignore_mask = K.expand_dims(ignore_mask, -1)
-
-        box_loss = object_mask * K.square(box_delta*box_delta_scale)
-        confidence_loss = object_mask * K.square(1-pred_confidence) + \
-            (1-object_mask) * K.square(0-pred_confidence) * ignore_mask
-        class_loss = object_mask * K.square(true_class_probs-pred_class_probs)
-        loss += K.sum(box_loss) + K.sum(confidence_loss) + K.sum(class_loss)
-    return loss / K.cast(m, K.dtype(loss))
