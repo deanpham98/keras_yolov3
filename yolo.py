@@ -54,8 +54,6 @@ class YOLO(object):
         self.yolo_model = load_model(model_path, compile=False)
         print('{} model, anchors, and classes loaded.'.format(model_path))
 
-
-        self.model_image_size = self.yolo_model.layers[0].input_shape[1:3]
         # Generate colors for drawing bounding boxes.
         hsv_tuples = [(x / len(self.class_names), 1., 1.)
                       for x in range(len(self.class_names))]
@@ -145,10 +143,9 @@ class YOLO(object):
         self.sess.close()
 
 
-
-def detect_video(yolo,video_path):
-    vid = cv2.VideoCapture(video_path)  ### TODO: will video path other than 0 be used?
-
+def detect_video(yolo, video_path):
+    import cv2
+    vid = cv2.VideoCapture(video_path)
     if not vid.isOpened():
         raise IOError("Couldn't open webcam or video")
     accum_time = 0
@@ -169,12 +166,10 @@ def detect_video(yolo,video_path):
             accum_time = accum_time - 1
             fps = "FPS: " + str(curr_fps)
             curr_fps = 0
-
-        cv2.putText(result, text=fps, org=(3, 15), fontFace=cv2.FONT_HERSHEY_SIMPLEX, fontScale=0.50,
-                    color=(255, 0, 0), thickness=2)
+        cv2.putText(result, text=fps, org=(3, 15), fontFace=cv2.FONT_HERSHEY_SIMPLEX,
+                    fontScale=0.50, color=(255, 0, 0), thickness=2)
         cv2.namedWindow("result", cv2.WINDOW_NORMAL)
-        cv2.imshow("result",result)
-
+        cv2.imshow("result", result)
         if cv2.waitKey(1) & 0xFF == ord('q'):
             break
     yolo.close_session()
