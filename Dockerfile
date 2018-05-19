@@ -93,13 +93,13 @@ RUN apt-get update \
 && ln -s /usr/bin/pip3 /usr/bin/pip \
 && ln -s /usr/bin/python3 /usr/bin/python \
 && apt-get clean \
-&& rm -rf /var/lib/apt/lists/*
-&& jupyter-notebook --generate-config
-&& echo "c = get_config()" >> /root/.jupyter/jupyter_notebook_config.py
-&& echo "c.NotebookApp.ip = '*'" >> /root/.jupyter/jupyter_notebook_config.py
-&& echo "c.NotebookApp.open_browser = False" >> /root/.jupyter/jupyter_notebook_config.py
-&& echo "c.NotebookApp.port = 8080" >> /root/.jupyter/jupyter_notebook_config.py
-&& echo "c.NotebookApp.password = 'sha1:d1a76026f118:82c006e5a506dd9c4c9f171050e3defaaca3a21e'" >> /root/.jupyter/jupyter_notebook_config.py
+&& rm -rf /var/lib/apt/lists/* \
+&& jupyter-notebook --generate-config \
+&& echo "c = get_config()" >> /root/.jupyter/jupyter_notebook_config.py \
+&& echo "c.NotebookApp.ip = '*'" >> /root/.jupyter/jupyter_notebook_config.py \
+&& echo "c.NotebookApp.open_browser = False" >> /root/.jupyter/jupyter_notebook_config.py \
+&& echo "c.NotebookApp.port = 8080" >> /root/.jupyter/jupyter_notebook_config.py \
+&& echo "c.NotebookApp.password = 'sha1:d1a76026f118:82c006e5a506dd9c4c9f171050e3defaaca3a21e'" >> /root/.jupyter/jupyter_notebook_config.py 
 
 # For CUDA profiling, TensorFlow requires CUPTI
 ENV LD_LIBRARY_PATH /usr/local/cuda/extras/CUPTI/lib64:$LD_LIBRARY_PATH
