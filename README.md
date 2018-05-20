@@ -50,10 +50,14 @@ nvidia-docker run --rm nguyenkh001/vebits-yolov3:latest
 
 # To be able to use opencv with -v and -e flags (mounting volume and environment variable placement)
 # Before that we need to run this command to allow non-network service to access host machine X11 server
-xhost local:root
+xhost +local:root
 # or
-xhost local:docker
+xhost +local:docker
 nvidia-docker run -v /tmp/.X11-unix:/tmp/.X11-unix -e DISPLAY=$DISPLAY nguyenkh001/vebits-yolov3:latest
+# After that we need to run this command to return the access back to our host machine
+xhost -local:root
+# or
+xhost -local:docker
 
 # To be able to use jupyter notebook with -p flag (make connection between host machine's port and container's port)
 nvidia-docker run -p <host-port>:8080 nguyenkh001/vebits-yolov3:latest
