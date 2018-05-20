@@ -53,6 +53,7 @@ nvidia-docker run --rm nguyenkh001/vebits-yolov3:latest
 xhost +local:root
 # or
 xhost +local:docker
+# Run the image
 nvidia-docker run -v /tmp/.X11-unix:/tmp/.X11-unix -e DISPLAY=$DISPLAY nguyenkh001/vebits-yolov3:latest
 # After that we need to run this command to return the access back to our host machine
 xhost -local:root
