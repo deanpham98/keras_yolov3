@@ -6,6 +6,7 @@
 
 ### Prerequisites
 - Host machine must be a Linux machine (Preferably Ubuntu 16.04) with GPU having compute capability > 3.0. (Check out [here](https://developer.nvidia.com/cuda-gpus) for your GPU)
+- nvidia driver ver. 390 is preferred (Install from [here](http://www.linuxandubuntu.com/home/how-to-install-latest-nvidia-drivers-in-linux) for Ubuntu 16.04)
 - CUDA 9.0 and cudnn 7.0.5  (Install from [here](https://yangcha.github.io/CUDA90/) for Ubuntu 16.04)
 - docker 18.03.1. (Install from [here](https://docs.docker.com/install/))
 - nvidia-docker 2 (Install from [here](https://github.com/NVIDIA/nvidia-docker/blob/master/README.md))
