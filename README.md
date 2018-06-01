@@ -1,35 +1,123 @@
-# keras-yolo3
+# YOLOv3
+> YOLO version 3 repository for development
 
-[![license](https://img.shields.io/github/license/mashape/apistatus.svg)](LICENSE)
+## Getting Started
+> Instructions for setting up environments, source codes for both development and production. General docker commands for using the image
 
-## Introduction
+### Prerequisites
+- Host machine must be a Linux machine (Preferably Ubuntu 16.04) with GPU having compute capability > 3.0. (Check out [here](https://developer.nvidia.com/cuda-gpus) for your GPU)
+- nvidia driver ver. 390 is preferred (Install from [here](http://www.linuxandubuntu.com/home/how-to-install-latest-nvidia-drivers-in-linux) for Ubuntu 16.04)
+- docker 18.03.1. (Install from [here](https://docs.docker.com/install/))
+- nvidia-docker 2 (Install from [here](https://github.com/NVIDIA/nvidia-docker/blob/master/README.md))
+- git 
 
-A Keras implementation of YOLOv3 (Tensorflow backend) inspired by [allanzelener/YAD2K](https://github.com/allanzelener/YAD2K).
-
----
-
-## Quick Start
-
-1. Download YOLOv3 weights from [YOLO website](http://pjreddie.com/darknet/yolo/).
-2. Convert the Darknet YOLO model to a Keras model.
-3. Run YOLO detection.
-
+### Setup Environment
+Pull docker image from docker hub
 ```
-wget https://pjreddie.com/media/files/yolov3.weights
-python convert.py yolov3.cfg yolov3.weights model_data/yolo.h5
-python yolo.py   OR   python yolo_video.py
+docker pull nguyenkh001/vebits-yolov3:latest
+```
+**Note**: 
+1/ Dockerfile for building this docker image is [here](/Dockerfile)
+2/ This docker image includes:
+- Ubuntu 16.04
+- nvidia driver ver. 390
+- Cuda 9.0
+- Cudnn 7.0.5
+- Python 3.5
+- Pip 10.0.1
+- Python libraries: numpy, pandas, matplotlib, scipy, scikit-learn, opencv 3.4, tensorflow-gpu 1.5, keras 2.1.6, IPython[all]
+### Setup Source Code
+Clone the source code repository
+```
+git clone --recursive https://github.com/deanpham98/keras-yolo3-1 yolov3
+```
+Follow the instruction [here](https://github.com/deanpham98/keras-yolo3-1/blob/master/README.md)
+
+### Docker Commands
+**nvidia-docker run** (Must not use **docker run**)
+```
+# Normal run command
+nvidia-docker run nguyenkh001/vebits-yolov3:latest
+
+# Naming the container with --name flag
+nvidia-docker run --name yolov3 nguyenkh001/vebits-yolov3:latest
+
+# Run the container in an interactive shell with -ti flag
+nvidia-docker run -ti nguyenkh001/vebits-yolov3:latest
+
+# Remove the container when it is stopped with --rm flag
+nvidia-docker run --rm nguyenkh001/vebits-yolov3:latest
+
+# To be able to use opencv with -v and -e flags (mounting volume and environment variable placement)
+# Before that we need to run this command to allow non-network service to access host machine X11 server
+xhost +local:root
+# or
+xhost +local:docker
+# Run the image
+nvidia-docker run -v /tmp/.X11-unix:/tmp/.X11-unix -e DISPLAY=$DISPLAY nguyenkh001/vebits-yolov3:latest
+# After we finish using our container we need to run this command to return the access back to our host machine
+xhost -local:root
+# or
+xhost -local:docker
+
+# To be able to use jupyter notebook with -p flag (make connection between host machine's port and container's port)
+nvidia-docker run -p <host-port>:8080 nguyenkh001/vebits-yolov3:latest
+
+# To create a new volume, which will store everything in the directory /var/lib/docker/volumes/<name>/_data
+docker volume create <name>
+
+# To mount a volume from anywhere in your host machine (not necessarily created as above) to a directory inside the container, use -v flag
+nvidia-docker run -v <volume-path-in-host-machine>:<directory-path-in-container> nguyenkh001/vebits-yolov3:latest
+
+# To mount a volume in your host machine to your container when running the image
+nvidia-docker run --mount source=<volume-name>,target=<path-in-container> nguyenkh001/vebits-yolov3:latest
 ```
 
----
+**docker commit**
+```
+# To commit a change to the environment
+docker commit <running-container-id> <new-image-name>
+```
 
-## Training
+**docker container**
+```
+# To list all containers
+docker ps
 
-1. Generate your own annotation file and class names file.  
-    One row for one image;  
-    Row format: image_file_path box1 box2 ... boxN;  
-    Box format: x_min,y_min,x_max,y_max,class_id (no space).  
-    For VOC dataset, try `python voc_annotation.py`
+# To stop a container
+docker container stop <container-name-or-id>
 
-2. Modify train.py and start training.  
-    `python train.py`  
-    You will get the trained model model_data/my_yolo.h5.
+# To stop all container
+docker container stop $(docker ps -qa)
+
+# To remove a container
+docker container rm <container-name-or-id>
+
+
+# To remove all containers
+docker container rm $(docker ps -qa)
+
+# To inspect a container
+docker inspect <container-name-or-id>
+```
+
+**docker image**
+```
+# To list all images
+docker image ls
+
+# To remove an image
+docker image rm <image-name-or-id>
+```
+
+**docker volume**
+```
+# To create a new volume
+docker volume create <volume-name>
+
+# To inspect a volume
+docker volume inspect <volume-name>
+
+# To remove a volume
+docker volume rm <volume-name>
+```
