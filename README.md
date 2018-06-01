@@ -27,7 +27,13 @@ docker pull nguyenkh001/vebits-yolov3:latest
 - Pip 10.0.1
 - Python libraries: numpy, pandas, matplotlib, scipy, scikit-learn, opencv 3.4, tensorflow-gpu 1.5, keras 2.1.6, IPython[all]
 
-### Docker Commands
+### Start the environment
+**Run this scripts for simplicity:**
+```
+bash Scripts/docker.sh
+```
+
+### Docker commands
 **nvidia-docker run** (Must not use **docker run**)
 ```
 # Normal run command
