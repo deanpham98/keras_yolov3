@@ -143,9 +143,12 @@ class YOLO(object):
         self.sess.close()
 
 
-def detect_video(yolo, video_path):
+def detect_video(yolo, video_path, output_path):
     import cv2
     vid = cv2.VideoCapture(video_path)
+    frame_w = int(vid.get(cv2.CAP_PROP_FRAME_WIDTH))
+    frame_h = int(vid.get(cv2.CAP_PROP_FRAME_HEIGHT))
+    out = cv2.VideoWrite(output_path, cv2.VideoWriter_fourcc(*'mp4v'), 25.0, (frame_w, frame_h))
     if not vid.isOpened():
         raise IOError("Couldn't open webcam or video")
     accum_time = 0
@@ -168,10 +171,14 @@ def detect_video(yolo, video_path):
             curr_fps = 0
         cv2.putText(result, text=fps, org=(3, 15), fontFace=cv2.FONT_HERSHEY_SIMPLEX,
                     fontScale=0.50, color=(255, 0, 0), thickness=2)
-        cv2.namedWindow("result", cv2.WINDOW_NORMAL)
+#        cv2.namedWindow("result", cv2.WINDOW_NORMAL)
         cv2.imshow("result", result)
+        out.write
         if cv2.waitKey(1) & 0xFF == ord('q'):
+            cv2.destroyAllWindows()
             break
+    out.release()
+    vid.release()
     yolo.close_session()
 
 

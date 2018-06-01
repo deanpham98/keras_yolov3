@@ -22,9 +22,9 @@ from keras.utils.vis_utils import plot_model as plot
 
 
 parser = argparse.ArgumentParser(description='Darknet To Keras Converter.')
-parser.add_argument('config_path', help='Path to Darknet cfg file.')
-parser.add_argument('weights_path', help='Path to Darknet weights file.')
-parser.add_argument('output_path', help='Path to output Keras model file.')
+parser.add_argument('config_path', help='Path to configuration file.')
+parser.add_argument('weights_path', help='Path to yolov3 weights file.')
+parser.add_argument('output_path', help='Output path of model.')
 parser.add_argument(
     '-p',
     '--plot_model',
