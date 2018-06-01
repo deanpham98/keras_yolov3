@@ -1,9 +1,6 @@
 from __future__ import division
-import keras
-import time
-import pdb
+from keras import backend as K
 import numpy as np
-import scipy.ndimage as ndi
 import cv2
 from PIL import Image
 
@@ -13,27 +10,6 @@ from .transform import change_transform_origin, transform_aabb
 def read_image_bgr(path):
     image = np.asarray(Image.open(path).convert('RGB'))
     return image[:, :, ::-1].copy() 
-
-
-def preprocess_image(x):
-    # mostly identical to "https://github.com/fchollet/keras/blob/master/keras/applications/imagenet_utils.py"
-    # except for converting RGB -> BGR since we assume BGR already
-    x = x.astype(keras.backend.floatx())
-    if keras.backend.image_data_format() == 'channels_first':
-        if x.ndim == 3:
-            x[0, :, :] -= 103.939
-            x[1, :, :] -= 116.779
-            x[2, :, :] -= 123.68
-        else:
-            x[:, 0, :, :] -= 103.939
-            x[:, 1, :, :] -= 116.779
-            x[:, 2, :, :] -= 123.68
-    else:
-        x[..., 0] -= 103.939
-        x[..., 1] -= 116.779
-        x[..., 2] -= 123.68
-
-    return x
 
 
 def adjust_transform_for_image(transform, image, relative_translation):
@@ -79,7 +55,7 @@ class TransformParameters:
         self.relative_translation = relative_translation
 
         if data_format is None:
-            data_format = keras.backend.image_data_format()
+            data_format = K.image_data_format()
         self.data_format = data_format
 
         if data_format == 'channels_first':

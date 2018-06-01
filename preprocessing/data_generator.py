@@ -5,7 +5,6 @@ import numpy as np
 from PIL import Image
 from six import raise_from
 
-import csv
 import sys
 import os.path
 

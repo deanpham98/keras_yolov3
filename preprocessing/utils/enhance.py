@@ -2,10 +2,10 @@ import numpy as np
 from PIL import Image, ImageEnhance
 
 def array_to_img(x):
-	return Image.fromarray(x[:,:,-1:-4:-1])
+	return Image.fromarray(x[:,:,::-1])
 
 def img_to_array(img):
-	return np.array(img)[:,:,-1:-4:-1]
+	return np.array(img)[:,:,::-1]
 
 def apply_brightness_shift(x, brightness):
 	x = array_to_img(x)
