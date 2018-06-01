@@ -4,14 +4,14 @@
 ## Getting Started
 > Instructions for setting up environments, source codes for both development and production. General docker commands for using the image
 
-### Prerequisites
+## Prerequisites
 - Host machine must be a Linux machine (Preferably Ubuntu 16.04) with GPU having compute capability > 3.0. (Check out [here](https://developer.nvidia.com/cuda-gpus) for your GPU)
 - nvidia driver ver. 390 is preferred (Install from [here](http://www.linuxandubuntu.com/home/how-to-install-latest-nvidia-drivers-in-linux) for Ubuntu 16.04)
 - docker 18.03.1. (Install from [here](https://docs.docker.com/install/))
 - nvidia-docker 2 (Install from [here](https://github.com/NVIDIA/nvidia-docker/blob/master/README.md))
 - git 
 
-### Setup Environment
+## Setup Environment
 Pull docker image from docker hub
 ```
 docker pull nguyenkh001/vebits-yolov3:latest
@@ -26,12 +26,6 @@ docker pull nguyenkh001/vebits-yolov3:latest
 - Python 3.5
 - Pip 10.0.1
 - Python libraries: numpy, pandas, matplotlib, scipy, scikit-learn, opencv 3.4, tensorflow-gpu 1.5, keras 2.1.6, IPython[all]
-### Setup Source Code
-Clone the source code repository
-```
-git clone --recursive https://github.com/deanpham98/keras-yolo3-1 yolov3
-```
-Follow the instruction [here](https://github.com/deanpham98/keras-yolo3-1/blob/master/README.md)
 
 ### Docker Commands
 **nvidia-docker run** (Must not use **docker run**)
@@ -120,4 +114,25 @@ docker volume inspect <volume-name>
 
 # To remove a volume
 docker volume rm <volume-name>
+```
+
+## Source Code and Data
+Download weights file [**yolov3.weights**](https://pjreddie.com/media/files/yolov3.weights):
+```
+wget https://pjreddie.com/media/files/yolov3.weights
+```
+
+Convert Darknet model to Keras model:
+```
+python setup/convert.py config/yolov3.cfg yolov3.weights models/yolo.h5
+```
+
+Download COCO data:
+```
+bash Scripts/get_coco_dataset.sh
+```
+
+Download Pascal VOC 2007 and 2012 data:
+```
+bash Scripts/get_voc_dataset.sh
 ```
