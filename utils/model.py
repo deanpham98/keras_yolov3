@@ -1,17 +1,28 @@
 """YOLO_v3 Model Defined in Keras."""
 
-from functools import wraps
+from functools import wraps, reduce 
 
 import numpy as np
 import tensorflow as tf
 from keras import backend as K
-from keras.layers import Conv2D, Add, ZeroPadding2D, UpSampling2D, Concatenate
+from keras.layers import Input, Lambda, Conv2D, Add, ZeroPadding2D, UpSampling2D, Concatenate
 from keras.layers.advanced_activations import LeakyReLU
 from keras.layers.normalization import BatchNormalization
-from keras.models import Model
+from keras.models import Model, load_model
 from keras.regularizers import l2
 
-from yolo3.utils import compose
+
+
+def compose(*funcs):
+    """Compose arbitrarily many functions, evaluated left to right.
+
+    Reference: https://mathieularose.com/function-composition-in-python/
+    """
+    # return lambda x: reduce(lambda v, f: f(v), funcs, x)
+    if funcs:
+        return reduce(lambda f, g: lambda *a, **kw: g(f(*a, **kw)), funcs)
+    else:
+        raise ValueError('Composition of empty sequence not supported.')
 
 
 @wraps(Conv2D)
@@ -67,7 +78,7 @@ def make_last_layers(x, num_filters, out_filters):
     return x, y
 
 
-def yolo_body(inputs, num_anchors, num_classes):
+def yolo_body(inputs, num_anchors=3, num_classes):
     """Create YOLO_V3 model CNN body in Keras."""
     darknet = Model(inputs, darknet_body(inputs))
     x, y1 = make_last_layers(darknet.output, 512, num_anchors*(num_classes+5))
@@ -85,6 +96,61 @@ def yolo_body(inputs, num_anchors, num_classes):
     x, y3 = make_last_layers(x, 128, num_anchors*(num_classes+5))
 
     return Model(inputs, [y1,y2,y3])
+
+
+def yolo_training(input_shape=(416, 416), 
+                  anchors=np.array(((10,13), (16,30), (33,23), (30,61), (62,45), 
+                                    (59,119), (116,90), (156,198), (373,326))), 
+                  num_classes, 
+                  model_path=None,
+                  weights_path=None, 
+                  freeze_body=True):
+    
+    # Assume the weights path is available and exists
+    assert weights_path is not None and os.path.exists(weights_path), "Weights path is not provided or does not exist"
+
+    infer_model = None
+
+    if model_path is not None:
+        # Check if model path exists
+        assert os.path.exists(model_path), "Model path does not exist"
+        # Load uncompiled infer model 
+        infer_model = load_model(model_path, compile=False)
+    else:
+        # Input layer 1
+        image_input = Input(shape=(None, None, 3))
+        h, w = input_shape
+        num_anchors = len(anchors) // 3
+
+        # Input layer 2, 3, 4 which are the offsets from ground truths
+        y_true = [Input(shape=(h//32, w//32, num_anchors, num_classes+5)),
+                  Input(shape=(h//16, w//16, num_anchors, num_classes+5)),
+                  Input(shape=(h//8, w//8, num_anchors, num_classes+5))]
+
+        # Rebuild the infer model
+        infer_model = yolo_body(image_input, num_anchors, num_classes)
+    
+    # Load weights into infer model by name and skip mismatch
+    infer_model.load_weights(weights_path, by_name=True, skip_mismatch=True)
+
+    # Freeze the weights of some layers for fine-tuning
+    if freeze_body:
+        for layer_index in range(len(infer_model.layers) - 3):
+            infer_model.layers[layer_index].trainable = False
+
+    # Custom output layer for training with output as the value of objective function which we want to optimize
+    loss_layer = Lambda(yolo_loss, 
+                        output_shape=(1,), 
+                        name='yolo_loss', 
+                        arguments={'anchors': anchors, 'num_classes': num_classes})(
+                                [*infer_model.output, *y_true]
+                            )
+
+    # Build the training model
+    model = Model(inputs=[infer_model.input, *y_true], outputs=loss_layer)
+
+    # Return both the infer model and the training model
+    return infer_model, model
 
 
 def yolo_head(feats, anchors, num_classes, input_shape):
