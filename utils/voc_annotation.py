@@ -1,5 +1,6 @@
+import os
 import xml.etree.ElementTree as ET
-from os import getcwd
+
 
 sets=[('2012', 'train'), ('2012', 'val'), ('2007', 'train'), ('2007', 'val'), ('2007', 'test')]
 
@@ -7,10 +8,10 @@ classes = ["bicycle", "bus", "car", "motorbike", "person"]
 
 
 def convert_annotation(wd, year, image_id, list_file):
-    in_file = open('VOCdevkit/VOC%s/Annotations/%s.xml'%(year, image_id))
+    in_file = open(os.path.join(wd, 'VOC/VOC%s/Annotations/%s.xml'%(year, image_id)))
     tree=ET.parse(in_file)
     root = tree.getroot()
-    image = '%s/VOCdevkit/VOC%s/JPEGImages/%s.jpg'%(wd, year, image_id)
+    image = 'VOC/VOC%s/JPEGImages/%s.jpg'%(year, image_id)
     data = ''
     for obj in root.iter('object'):
         difficult = obj.find('difficult').text
@@ -24,11 +25,12 @@ def convert_annotation(wd, year, image_id, list_file):
     if data != '':
         list_file.write(image + data + '\n')
 
-wd = getcwd()
+wd = os.path.join(os.path.dirname(__file__), '..', 'data')
+out = os.path.join(os.path.dirname(__file__), '..', 'data', 'annotations')
 
 for year, image_set in sets:
-    image_ids = open('VOCdevkit/VOC%s/ImageSets/Main/%s.txt'%(year, image_set)).read().strip().split()
-    list_file = open('%s_%s.txt'%(year, image_set), 'w')
+    image_ids = open(os.path.join(wd, 'VOC/VOC%s/ImageSets/Main/%s.txt'%(year, image_set))).read().strip().split()
+    list_file = open(os.path.join(out, '%s_%s.txt'%(year, image_set)), 'w')
     for image_id in image_ids:
         convert_annotation(wd, year, image_id, list_file)
     list_file.close()
