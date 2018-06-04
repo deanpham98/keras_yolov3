@@ -1,15 +1,14 @@
-from generator import Generator
-from utils.image import read_image_bgr
+from .generator import Generator
+from .utils.image import read_image_bgr
 
 import numpy as np
 from PIL import Image
-from six import raise_from
 
 import sys
 import os.path
 
 
-def _read_classes(file):    
+def _read_classes(file):
     return {key.strip("\n"): value for value, key in enumerate(file.readlines())}
 
 
@@ -27,7 +26,7 @@ class DataGenerator(Generator):
         self,
         data_file,
         class_file,
-        base_dir=None,
+        base_dir=os.path.join(os.path.dirname(__file__), '..', 'data'),
         **kwargs
     ):
         self.image_names = []

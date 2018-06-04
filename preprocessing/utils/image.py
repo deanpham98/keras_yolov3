@@ -1,4 +1,7 @@
 from __future__ import division
+
+import pdb
+
 from keras import backend as K
 import numpy as np
 import cv2
@@ -8,7 +11,10 @@ from .transform import change_transform_origin, transform_aabb
 
 
 def read_image_bgr(path):
-    image = np.asarray(Image.open(path).convert('RGB'))
+    try:
+         image = np.asarray(Image.open(path).convert('RGB'))
+    except:
+         pdb.set_trace()
     return image[:, :, ::-1].copy() 
 
 
@@ -130,11 +136,11 @@ def resize_image(img, annotations, input_shape=(416, 416)):
     new_size = (img_size * np.min(input_size/img_size)).astype('int32')
     annotations[:, 0:2] = (annotations[:, 0:2] * new_size/img_size + (input_size - new_size)/2)
     annotations[:, 2:4] = (annotations[:, 2:4] * new_size/img_size + (input_size - new_size)/2)
-    x = [True, False, True, False, False]
-    y = [False, True, False, True, False]
+    # x = [True, False, True, False, False]
+    # y = [False, True, False, True, False]
 
-    annotations[:, x] = np.clip(annotations[:, x], (w - new_w)//2, w if img_w < img_h else (new_w + w)//2)
-    annotations[:, y] = np.clip(annotations[:, y], (h - new_h)//2, h if img_h < img_w else (new_h + h)//2)
+    # annotations[:, x] = np.clip(annotations[:, x], (w - new_w)//2, w if img_w < img_h else (new_w + w)//2)
+    # annotations[:, y] = np.clip(annotations[:, y], (h - new_h)//2, h if img_h < img_w else (new_h + h)//2)
     # check if the largest side is now greater than max_side, which can happen
     # when images have a large aspect ratio
 
