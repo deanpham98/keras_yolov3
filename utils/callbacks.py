@@ -96,7 +96,7 @@ class Metrics(keras.callbacks.Callback):
         self.save_weights_only      = save_weights_only
         self.period                 = period
         self.epochs_since_last_save = 0
-        
+
         if mode not in ['auto', 'min', 'max']:
             warnings.warn('Metrics checkpoint mode %s is unknown, '
                           'fallback to max mode.' % (mode),
@@ -120,14 +120,14 @@ class Metrics(keras.callbacks.Callback):
                 self.monitor_op = np.less
                 self.best = np.Inf
 
-        super(Evaluate, self).__init__()
+        super(Metrics, self).__init__()
 
     def on_epoch_end(self, epoch, logs=None):
         logs = logs or {}
-        
+
         # run evaluation
         average_precisions = evaluate(
-        		generator=self.generator,
+                            generator=self.generator,
 			    model=self.model,
 			    iou_threshold=self.iou_threshold,
 			    score_threshold=self.score_threshold,
@@ -150,7 +150,7 @@ class Metrics(keras.callbacks.Callback):
         self.epochs_since_last_save += 1
         if self.epochs_since_last_save >= self.period:
             self.epochs_since_last_save = 0
-            file_path = self.filepath.format(epoch=epoch+1, **logs)
+            filepath = self.filepath.format(epoch=epoch+1, **logs)
             if self.save_best_only:
                 current = logs.get(self.monitor)
                 if current is None:
