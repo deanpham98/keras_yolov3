@@ -1,4 +1,5 @@
 import numpy as np
+import cv2
 from PIL import Image, ImageEnhance
 
 def array_to_img(x):
@@ -28,7 +29,7 @@ def apply_sharpness_shift(x, sharpness):
 
 class random_enhance_generator():
 	def __init__ (self,
-			 	  brightness_range=(0.2, 1.5),
+			 	  brightness_range=(0.2, 1.8),
 			 	  contrast_range=(0.6, 0.8),
 			 	  sharpness_range=(0.6, 0.8)
  		):
