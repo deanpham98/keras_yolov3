@@ -1,6 +1,9 @@
-from __future__ import print_function
-
+from PIL import Image
 import numpy as np
+from keras import backend as K
+
+
+from .model import yolo_eval
 
 # from keras.models import Model
 
@@ -56,77 +59,84 @@ def _compute_ap(recall, precision):
     ap = np.sum((mrec[i + 1] - mrec[i]) * mpre[i + 1])
     return ap
 
-def _get(generator, model, score_threshold=0.3, max_detections=100, save_path=None):
-    """ Get the detections from the model using the generator.
-    The result is a list of lists such that the size is:
-        all_detections[num_images][num_classes] = detections[num_detections, 4 + num_classes]
-    # Arguments
-        generator       : The generator used to run images through the model.
-        model           : The model to run on the images.
-        score_threshold : The score confidence threshold to use.
-        max_detections  : The maximum number of detections to use per image.
-        save_path       : The path to save the images with visualized detections to.
-    # Returns
-        A list of lists containing the detections for each image in the generator.
-    """
-    total = generator.batch_size*(generator.size() // generator.batch)
-    all_detections = [[None for i in range(generator.num_classes())] for j in range(total)]
-    all_annotations = [[None for i in range(generator.num_classes())] for j in range(total)]
-    # predict_model = Model(inputs=model.get_layer("input_1").input, outputs=[model.get_layer("conv2d_{}".format(i)).output for i in [59, 67, 75]]) 
-    y_pred = None
+def _get(generator, model, score_threshold=0.3, max_detections=20, save_path=None):
 
-    for i in range(generator.size() // generator.batch_size):
+    all_detections = [[None for i in range(generator.num_classes())] for j in range(generator.size())]
+    all_annotations = [[None for i in range(generator.num_classes())] for j in range(generator.size())]
 
-        # Generate batch of data
-        batch_data = generator.next()
+    sess = K.get_session()
 
-        # run prediction on batch
-        y = predict_model.predict_on_batch(batch_data[0][0])
+    input_image_shape = K.placeholder(shape=(2, ))
+    out_boxes, out_scores, out_labels = yolo_eval(
+                                yolo_outputs    = model.output,
+                                anchors         = generator.anchors,
+                                num_classes     = generator.num_classes(),
+                                image_shape     = input_image_shape,
+                                max_boxes       = max_detections,
+                                score_threshold = score_threshold,
+                                iou_threshold   = 0.5
+                            )
+    for i in range(generator.size()):
+#        pdb.set_trace()
+        annotations = generator.load_annotations(i)
+        true_boxes_xy = (annotations[:, 0:2] + annotations[:, 2:4]) // 2
+        true_boxes_wh = annotations[:, 2:4] - annotations[:, 0:2]
+        annotations[:, 0:2] = true_boxes_xy
+        annotations[:, 2:4] = true_boxes_wh
+        image = generator.load_image(i)
+        image = Image.fromarray(image[:,:,::-1])
+        size = generator.input_shape
+        width, height = size
+        img_width, img_height = image.size
+        
+        scale = min(width / img_width, height / img_height)
+        new_width = int(img_width * scale)
+        new_height = int(img_height * scale)
 
-        # Stacking image groups detections
-        y_pred = y if y_pred is None else [np.concatenate([y_pred[j], y[j]]) for j in range(3)]
+        image_data = image.resize((new_width, new_height), Image.BICUBIC)
+        padded_image = Image.new('RGB', size, (128,128,128))
+        padded_image.paste(image_data, ((width - new_width) // 2, (height - new_height) // 2))
 
-    # 3 detection layer, each having 3 anchor boxes concatenated into 9 anchor boxes    
-    y_pred = np.concatenate([np.reshape(y_pred[j], (*(y_pred[j].shape[:3]), 3, *(y_pred[j].shape[3:]//3))) for j in range(3)], axis=-2)
+        padded_image = np.array(padded_image, dtype='float32')
+        padded_image = np.expand_dims(padded_image / 255., axis=0)
 
-    for image_index in range(total): 
+        boxes, scores, labels = sess.run(
+                                    [out_boxes, out_scores, out_labels],
+                                     feed_dict = {
+                                         model.input: padded_image,
+                                         input_image_shape: [image.size[1], image.size[0]],
+                                         K.learning_phase(): 0
+                                    }
+                                )
 
-        annotations = generator.load_annotations(image_index)
+        image_boxes         = np.array(boxes)
+        image_scores        = np.array(scores)
+        image_labels        = np.array(labels)
+        image_boxes[:, 0:2] = np.maximum(np.zeros(image_boxes[:, 1::-1].shape), np.floor(image_boxes[:, 1::-1] + 0.5))
+        image_boxes[:, 2:4] = np.minimum(np.ones(image_boxes[:, 3:1:-1].shape) * generator.load_image(i).shape[1::-1], np.floor(image_boxes[:, 3:1:-1] + 0.5))
+        boxes_xy            = (image_boxes[:, 0:2] + image_boxes[:, 2:4]) // 2
+        boxes_wh            = image_boxes[:, 2:4] - image_boxes[:, 0:2]
 
-        # Find predictions with objectness > score threshold
-        y_pred_mask = y_pred[image_index, ..., 4] > score_threshold
+        image_detections    = np.concatenate([boxes_xy, boxes_wh,np.expand_dims(image_scores, axis=1), np.expand_dims(image_labels, axis=1)], axis=1)
 
-        # Each satisfied predictions of an image is an array of shape (num_satisfied_predictions, 3*(5 + num_classes))
-        short = y_pred[image_index, y_pred_mask]
-
-        # In case no detections, no need to process the below statements
-        if short.shape[0] == 0:
-            all_detections[image_index] = [[] for label in range(generator.num_classes())]
-            all_annotations[image_index] = [annotations[annotations[:, 4] == label, :4].copy() for label in range(generator.num_classes())]
-            continue
-
-        # detections is of shape (min(max_detections, num_satisfied_predictions), 5)
-        detections = np.zeros((min(max_detections, short.shape[0]), 5))
-
-        # Sort objectness of the predictions in descending order and take the first <max_detections> values
-        scores_order = np.argsort(-short[:, 4])[:max_detections]
-
-        # Assign to detections
-        detections[:, :5] = short[scores_order, :5] 
-        detections[:, 5] = np.argmax(short[scores_order, 5:], axis=-1)
-
+        # copy detections to all_detections
         for label in range(generator.num_classes()):
-            all_detections[image_index][label] = detections[detections[:, -1] == label, :4].copy()
-            all_annotations[image_index][label] = annotations[annotations[:, -1] == label, :4].copy()
+            all_detections[i][label] = image_detections[image_detections[:, -1] == label, :-1]
+            all_annotations[i][label] = annotations[annotations[:, 4] == label, :4].copy()
+
+        print('{}/{}'.format(i + 1, generator.size()), end='\r')
+
+    sess.close()
 
     return all_detections, all_annotations
+
 
 def evaluate(
     generator,
     model,
     iou_threshold=0.5,
     score_threshold=0.3,
-    max_detections=100,
+    max_detections=20,
     save_path=None
 ):
     """ Evaluate a given dataset using a given model.
@@ -142,6 +152,7 @@ def evaluate(
     """
     # gather all detections and annotations
     all_detections, all_annotations = _get(generator, model, score_threshold=score_threshold, max_detections=max_detections, save_path=save_path)
+
     average_precisions = {}
 
     # process detections and annotations
@@ -200,3 +211,4 @@ def evaluate(
         average_precisions[label] = average_precision
 
     return average_precisions
+

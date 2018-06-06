@@ -1,7 +1,6 @@
-import numpy as np
-import sys
 import pdb
-import cv2
+
+import numpy as np
 import random
 import threading
 import warnings
@@ -47,6 +46,7 @@ class Generator(object):
             self.shuffle_groups = False
             self.trainsform_generator = None
             self.enhance_generator = None
+            self.batch_size = 1
         self.group_images()
 
     def size(self):
@@ -136,25 +136,12 @@ class Generator(object):
         return resize_image(image, annotations, input_shape=self.input_shape)
 
     def preprocess_group_entry(self, image, annotations):
-        # b = deepcopy(image)
-        # for i in annotations.astype('int32'):
-        #     cv2.rectangle(b, (i[0], i[1]), (i[2], i[3]), (0, 255, 0), 2)
-        # c = deepcopy(annotations)
+
         image, annotations = self.random_transform_group_entry(image, annotations)
 
         image, annotations = self.resize_image(image, annotations, self.input_shape)
 
         image = self.random_enhance_group_entry(image)
-
-        # a = deepcopy(image)
-        # for i in annotations:
-        #     cv2.rectangle(a, (i[0], i[1]), (i[2], i[3]), (0, 255, 0), 2)
-        # cv2.imshow("original", b)
-        # cv2.imshow("truth", a)
-        # while True:
-        #     if cv2.waitKey(0):
-        #         cv2.destroyAllWindows()
-        #         break
 
         return image, annotations
 
@@ -162,6 +149,7 @@ class Generator(object):
         for index, (image, annotations) in enumerate(zip(image_group, annotations_group)):
             # preprocess a single group entry
             image, annotations = self.preprocess_group_entry(image, annotations)
+
             # copy processed data back to group
             image_group[index]       = image
             annotations_group[index] = annotations
@@ -171,6 +159,7 @@ class Generator(object):
     def group_images(self):
         # determine the order of the images
         order = list(range(self.size()))
+
         if self.group_method == 'random':
             random.shuffle(order)
         elif self.group_method == 'ratio':
@@ -179,12 +168,24 @@ class Generator(object):
         # divide into groups, one group = one batch
         self.groups = [[order[x % len(order)] for x in range(i, i + self.batch_size)] for i in range(0, len(order), self.batch_size)] \
                       if self.training \
-                      else [[order[x] for x in range(i, i + self.batch_size)] for i in range(0, self.batch_size*(self.size() // self.batch_size), self.batch_size)]
+                      else [[order[x] for x in range(i, i + self.batch_size)] for i in range(0, self.batch_size * (self.size() // self.batch_size), self.batch_size)]
 
     def compute_y_true(self, true_boxes):
+            #pdb.set_trace()
+            if self.training == False:
+                computed_true_boxes = []
+                for boxes in true_boxes:
+                    boxes_xy = (boxes[:, 0:2] + boxes[:, 2:4]) // 2
+                    boxes_wh = boxes[:, 2:4] - boxes[:, 0:2]
+                    boxes[:, 0:2] = boxes_xy
+                    boxes[:, 2:4] = boxes_wh
+                    computed_true_boxes.append(boxes)
+                return computed_true_boxes
             anchor_mask = [[6,7,8], [3,4,5], [0,1,2]]
 
             true_boxes = np.array([box.tolist() + np.zeros((100 - len(box), 5)).tolist() for box in true_boxes], dtype='float32')
+            #true_boxes = [np.concatenate((boxes, np.zeros(shape=(100 - len(boxes), 5), dtype=boxes.dtype)), axis=0) for boxes in true_boxes]
+
             input_shape = np.array(self.input_shape, dtype='int32')
 
             boxes_xy = (true_boxes[..., 0:2] + true_boxes[..., 2:4]) // 2
@@ -194,7 +195,9 @@ class Generator(object):
             true_boxes[..., 2:4] = boxes_wh / input_shape[::-1]
 
             num_images = true_boxes.shape[0]
+
             grid_shapes = [input_shape // {0:32, 1:16, 2:8}[l] for l in range(3)]
+
             y_true = [np.zeros((num_images, grid_shapes[l][0], grid_shapes[l][1], len(anchor_mask[l]), \
 	                        5 + self.num_classes()), dtype='float32') for l in range(3)]
 
@@ -202,51 +205,51 @@ class Generator(object):
             anchor_maxes = anchors / 2.
             anchor_mins = -anchor_maxes
 
-            valid_mask = boxes_wh[..., 0]>0
+            valid_mask = boxes_wh[..., 0] > 0 
 
             for image_index in range(num_images):
 
-	        # Discard zero rows.
+	            # Discard zero rows.
                 wh = boxes_wh[image_index, valid_mask[image_index]]
                 wh = np.expand_dims(wh, -2)
 
-	        # Find bbox max and min coordinates
+	            # Find bbox max and min coordinates
                 box_maxes = wh / 2.
                 box_mins = -box_maxes
 
-	        # Find intersection region width and height
+	            # Find intersection region width and height
                 intersect_mins = np.maximum(box_mins, anchor_mins)
                 intersect_maxes = np.minimum(box_maxes, anchor_maxes)
                 intersect_wh = np.maximum(intersect_maxes - intersect_mins, 0.)
 
-	        # Areas of intersection of (bbox), (anchor), (bbox and anchor)
+	            # Areas of intersection of (bbox), (anchor), (bbox and anchor)
                 intersect_area = intersect_wh[..., 0] * intersect_wh[..., 1]
                 box_area = wh[..., 0] * wh[..., 1]
                 anchor_area = anchors[..., 0] * anchors[..., 1]
 
-	        # IOU of bboxes and anchors
+	            # IOU of bboxes and anchors
                 iou = intersect_area / (box_area + anchor_area - intersect_area)
 
-	        # Find best anchor for each true box
+	            # Find best anchor for each true box
                 best_anchor = np.argmax(iou, axis=-1)
 
                 for box_index, anchor_index in enumerate(best_anchor):
                     for detection_layer in range(3):
 
-	            	# Check anchor_index to see it belongs to which detection layer
+	            	    # Check anchor_index to see it belongs to which detection layer
                         if anchor_index in anchor_mask[detection_layer]:
 
-                		# x, y coordinates of grid cell that the ground truth lies within
+                		  # x, y coordinates of grid cell that the ground truth lies within
                             cell_y = np.floor(true_boxes[image_index, box_index, 0] * grid_shapes[detection_layer][1]).astype('int32')
                             cell_x = np.floor(true_boxes[image_index, box_index, 1] * grid_shapes[detection_layer][0]).astype('int32')
 
-	                    # The index of the anchor within the detection layer
+	                       # The index of the anchor within the detection layer
                             anchor_layer_index = anchor_mask[detection_layer].index(anchor_index)
 
-	                    # One-hot encoded arrays representing classes probabilities
+	                       # One-hot encoded arrays representing classes probabilities
                             true_class = true_boxes[image_index, box_index, 4].astype('int32')
 
-	                    # Computing y_true: a list of three numpy array.
+	                       # Computing y_true: a list of three numpy array.
                             y_true[detection_layer][image_index, cell_x, cell_y, anchor_layer_index, 0:4] = true_boxes[image_index, box_index, 0:4]
                             y_true[detection_layer][image_index, cell_x, cell_y, anchor_layer_index, 4] = 1
                             y_true[detection_layer][image_index, cell_x, cell_y, anchor_layer_index, 5 + true_class] = 1
@@ -272,7 +275,7 @@ class Generator(object):
         for i in range(len(image_group)):
             image_batch[i] = image_group[i]
         # compute y_true
-        y_true = self.compute_y_true(annotations_group) if self.training else annotations_group
+        y_true = self.compute_y_true(annotations_group) 
 
         return [image_batch, *y_true], np.zeros(self.batch_size)
 
