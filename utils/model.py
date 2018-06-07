@@ -172,7 +172,7 @@ def yolo_training(
                     name         = 'yolo_loss',
                     arguments    = {'anchors': anchors, 'num_classes': num_classes}
                 )([*infer_model.output, *y_true])
-
+    
     # Build the training model
     model = Model(
                inputs  = [infer_model.input, *y_true], 
@@ -427,6 +427,10 @@ def yolo_loss(args, anchors, num_classes, ignore_thresh=.5):
     grid_shapes = [K.cast(K.shape(yolo_outputs[layer])[1:3], K.dtype(y_true[0])) for layer in range(3)]
     
     # Initialize loss
+    xy_loss = 0
+    wh_loss = 0
+    confidence_loss = 0
+    class_loss = 0
     loss = 0
     
     batch_size = K.shape(yolo_outputs[0])[0]
@@ -494,18 +498,28 @@ def yolo_loss(args, anchors, num_classes, ignore_thresh=.5):
 
         ignore_mask = K.expand_dims(ignore_mask, axis=-1)
 
-        xy_loss = object_mask * box_loss_scale * K.binary_crossentropy(true_xy, y_pred[..., 0:2])
+        xy_loss += K.sum(object_mask * box_loss_scale * K.binary_crossentropy(true_xy, y_pred[..., 0:2]))
 
-        wh_loss = object_mask * box_loss_scale * 0.5 * K.square(true_wh - y_pred[..., 2:4])
+        wh_loss += K.sum(object_mask * box_loss_scale * 0.5 * K.square(true_wh - y_pred[..., 2:4]))
 
         # log_weight = ignore_mask + (ignore_mask - 1) * object_mask
         #confidence_loss = (1 - object_mask) * y_pred[..., 4] + \
         #									log_weight * K.log(1 + K.exp(0 - K.abs(y_pred[..., 4]))) + \
         #													   K.relu(0 - y_pred[..., 4])
-        confidence_loss = tf.nn.weighted_cross_entropy_with_logits(object_mask, y_pred[..., 4:5], ignore_mask)
 
-        class_loss = object_mask * K.binary_crossentropy(true_class_probs, y_pred[..., 5:], from_logits=True)
+        confidence_loss += K.sum(object_mask * K.binary_crossentropy(object_mask, y_pred[..., 4:5], from_logits=True) + \
+                                (1 - object_mask) * K.binary_crossentropy(object_mask, y_pred[..., 4:5], from_logits=True) * ignore_mask)
 
-        loss += K.sum(xy_loss) + K.sum(wh_loss) + K.sum(confidence_loss) + K.sum(class_loss)
+        # confidence_loss = tf.nn.weighted_cross_entropy_with_logits(object_mask, y_pred[..., 4:5], ignore_mask)
 
-    return loss / K.cast(batch_size, K.dtype(loss))
+        class_loss += K.sum(object_mask * K.binary_crossentropy(true_class_probs, y_pred[..., 5:], from_logits=True))
+
+    tf.summary.scalar('xy_loss', xy_loss)
+    tf.summary.scalar('wh_loss', wh_loss)
+    tf.summary.scalar('confidence_loss', confidence_loss)
+    tf.summary.scalar('class_loss', class_loss)
+
+    loss += xy_loss + wh_loss + confidence_loss + class_loss
+    tf.summary.scalar('loss', loss)
+
+    return loss

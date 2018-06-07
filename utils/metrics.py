@@ -19,6 +19,8 @@ def compute_overlap(a, b):
     -------
     overlaps: (N, K) ndarray of overlap between boxes and query_boxes
     """
+    # import pdb
+    # pdb.set_trace()
     area = (b[:, 2] - b[:, 0]) * (b[:, 3] - b[:, 1])
 
     iw = np.minimum(np.expand_dims(a[:, 2], axis=1), b[:, 2]) - np.maximum(np.expand_dims(a[:, 0], 1), b[:, 0])
@@ -78,29 +80,11 @@ def _get(generator, model, score_threshold=0.3, max_detections=20, save_path=Non
             score_threshold = score_threshold,
             iou_threshold   = 0.5
         )
-    # input_shape = Lambda(lambda x: K.reshape(x, (2, )))(input_image_shape)
-    # predictions = Lambda(
-    #         function  = yolo_eval,
-    #         name      = 'yolo_eval',
-    #         arguments = {
-    #             'anchors'         : generator.anchors, 
-    #             'num_classes'     : generator.num_classes(),
-    #             'image_shape'     : input_shape,
-    #             'max_boxes'       : max_detections,
-    #             'score_threshold' : score_threshold,
-    #             'iou_threshold'   : 0.5
-    #         }
-    #     )(model.output)
-
-    # predict_model = Model(inputs=[model.input, input_image_shape], outputs=predictions)
-
+    
     for i in range(generator.size()):
 
         annotations = generator.load_annotations(i)
-        true_boxes_xy = (annotations[:, 0:2] + annotations[:, 2:4]) // 2
-        true_boxes_wh = annotations[:, 2:4] - annotations[:, 0:2]
-        annotations[:, 0:2] = true_boxes_xy
-        annotations[:, 2:4] = true_boxes_wh
+
         image = generator.load_image(i)
         image = Image.fromarray(image[:,:,::-1])
         size = generator.input_shape
@@ -126,23 +110,14 @@ def _get(generator, model, score_threshold=0.3, max_detections=20, save_path=Non
                      K.learning_phase(): 0
                 }
             )
-        # inputs = [padded_image, np.expand_dims(np.array(image.size[::-1]), axis=0)]
-
-        # boxes, scores, labels = predict_model.predict(
-        #                 x          = inputs, 
-        #                 batch_size = 1, 
-        #                 verbose    = 0, 
-        #         )
 
         image_boxes         = np.array(boxes)
         image_scores        = np.array(scores)
         image_labels        = np.array(labels)
         image_boxes[:, 0:2] = np.maximum(np.zeros(image_boxes[:, 1::-1].shape), np.floor(image_boxes[:, 1::-1] + 0.5))
         image_boxes[:, 2:4] = np.minimum(np.ones(image_boxes[:, 3:1:-1].shape) * generator.load_image(i).shape[1::-1], np.floor(image_boxes[:, 3:1:-1] + 0.5))
-        boxes_xy            = (image_boxes[:, 0:2] + image_boxes[:, 2:4]) // 2
-        boxes_wh            = image_boxes[:, 2:4] - image_boxes[:, 0:2]
 
-        image_detections    = np.concatenate([boxes_xy, boxes_wh,np.expand_dims(image_scores, axis=1), np.expand_dims(image_labels, axis=1)], axis=1)
+        image_detections    = np.concatenate([image_boxes[:, 0:2], image_boxes[:, 2:4], np.expand_dims(image_scores, axis=1), np.expand_dims(image_labels, axis=1)], axis=1)
 
         # copy detections to all_detections
         for label in range(generator.num_classes()):
@@ -177,9 +152,9 @@ def evaluate(
     all_detections, all_annotations = _get(generator=generator, model=model, score_threshold=score_threshold, max_detections=max_detections, save_path=save_path)
 
     average_precisions = {}
-
     # process detections and annotations
     for label in range(generator.num_classes()):
+
         false_positives = np.zeros((0,))
         true_positives  = np.zeros((0,))
         scores          = np.zeros((0,))
