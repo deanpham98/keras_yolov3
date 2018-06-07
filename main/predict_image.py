@@ -6,23 +6,44 @@ Run a YOLO_v3 style detection model on test images.
 
 import colorsys
 import os
+import sys
 import random
 from timeit import time
 from timeit import default_timer as timer  ### to calculate FPS
 
+import cv2
 import numpy as np
 from keras import backend as K
 from keras.models import load_model
 from PIL import Image, ImageFont, ImageDraw
 
-from yolo3.model import yolo_eval
-from yolo3.utils import letterbox_image
+
+# Allow relative import
+if __name__ == '__main__' and __package__ is None:
+    sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', '..'))
+    import yolov3.main
+    __package__ = 'yolov3.main'
+from ..utils.model import yolo_eval
+
+
+def letterbox_image(image, size):
+    iw, ih = image.size
+    w, h = size
+    scale = min(w/iw, h/ih)
+    nw = int(iw*scale)
+    nh = int(ih*scale)
+
+    image = image.resize((nw,nh), Image.BICUBIC)
+    new_image = Image.new('RGB', size, (128,128,128))
+    new_image.paste(image, ((w-nw)//2, (h-nh)//2))
+    return new_image
+
 
 class YOLO(object):
     def __init__(self):
-        self.model_path = 'model_data/yolo.h5'
-        self.anchors_path = 'model_data/yolo_anchors.txt'
-        self.classes_path = 'model_data/coco_classes.txt'
+        self.model_path = '/yolov3/models/original.h5'
+        self.anchors_path = '/yolov3/data/coco_anchors.txt'
+        self.classes_path = '/yolov3/data/classes/coco_classes.txt'
         self.score = 0.3
         self.iou = 0.5
         self.class_names = self._get_class()
@@ -85,7 +106,6 @@ class YOLO(object):
             boxed_image = letterbox_image(image, new_image_size)
         image_data = np.array(boxed_image, dtype='float32')
 
-        print(image_data.shape)
         image_data /= 255.
         image_data = np.expand_dims(image_data, 0)  # Add batch dimension.
 
@@ -96,10 +116,12 @@ class YOLO(object):
                 self.input_image_shape: [image.size[1], image.size[0]],
                 K.learning_phase(): 0
             })
-
+        print('out_boxes:', out_boxes)
+        print('out_scores:', out_scores)
+        print('out_classes:', out_classes)
         print('Found {} boxes for {}'.format(len(out_boxes), 'img'))
 
-        font = ImageFont.truetype(font='font/FiraMono-Medium.otf',
+        font = ImageFont.truetype(font='/yolov3/font/FiraMono-Medium.otf',
                     size=np.floor(3e-2 * image.size[1] + 0.5).astype('int32'))
         thickness = (image.size[0] + image.size[1]) // 300
 
@@ -192,9 +214,17 @@ def detect_img(yolo):
             continue
         else:
             r_image = yolo.detect_image(image)
-            r_image.show()
-    yolo.close_session()
-
+            image = np.array(r_image, dtype='uint8')
+            cv2.imshow('image', image)
+            while True:
+                 key = cv2.waitKey(0) & 0xFF
+                 if key == ord('n'):
+                      cv2.destroyAllWindows()
+                      break
+                 elif key == ord('q'):
+                      cv2.destroyAllWindows()
+                      yolo.close_session()
+                      sys.exit()
 
 
 if __name__ == '__main__':
