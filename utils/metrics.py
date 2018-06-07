@@ -1,7 +1,9 @@
 from PIL import Image
 import numpy as np
+import tensorflow as tf
 from keras import backend as K
-
+from keras.models import Model
+from keras.layers import Input, Lambda 
 
 from .model import yolo_eval
 
@@ -63,21 +65,37 @@ def _get(generator, model, score_threshold=0.3, max_detections=20, save_path=Non
 
     all_detections = [[None for i in range(generator.num_classes())] for j in range(generator.size())]
     all_annotations = [[None for i in range(generator.num_classes())] for j in range(generator.size())]
-
-    sess = K.get_session()
-
+    boxes = None
+    scores = None
+    labels = None
     input_image_shape = K.placeholder(shape=(2, ))
     out_boxes, out_scores, out_labels = yolo_eval(
-                                yolo_outputs    = model.output,
-                                anchors         = generator.anchors,
-                                num_classes     = generator.num_classes(),
-                                image_shape     = input_image_shape,
-                                max_boxes       = max_detections,
-                                score_threshold = score_threshold,
-                                iou_threshold   = 0.5
-                            )
+            yolo_outputs    = model.output,
+            anchors         = generator.anchors,
+            num_classes     = generator.num_classes(),
+            image_shape     = input_image_shape,
+            max_boxes       = max_detections,
+            score_threshold = score_threshold,
+            iou_threshold   = 0.5
+        )
+    # input_shape = Lambda(lambda x: K.reshape(x, (2, )))(input_image_shape)
+    # predictions = Lambda(
+    #         function  = yolo_eval,
+    #         name      = 'yolo_eval',
+    #         arguments = {
+    #             'anchors'         : generator.anchors, 
+    #             'num_classes'     : generator.num_classes(),
+    #             'image_shape'     : input_shape,
+    #             'max_boxes'       : max_detections,
+    #             'score_threshold' : score_threshold,
+    #             'iou_threshold'   : 0.5
+    #         }
+    #     )(model.output)
+
+    # predict_model = Model(inputs=[model.input, input_image_shape], outputs=predictions)
+
     for i in range(generator.size()):
-#        pdb.set_trace()
+
         annotations = generator.load_annotations(i)
         true_boxes_xy = (annotations[:, 0:2] + annotations[:, 2:4]) // 2
         true_boxes_wh = annotations[:, 2:4] - annotations[:, 0:2]
@@ -99,15 +117,22 @@ def _get(generator, model, score_threshold=0.3, max_detections=20, save_path=Non
 
         padded_image = np.array(padded_image, dtype='float32')
         padded_image = np.expand_dims(padded_image / 255., axis=0)
+        
+        boxes, scores, labels = K.get_session().run(
+                [out_boxes, out_scores, out_labels],
+                 feed_dict = {
+                     model.input: padded_image,
+                     input_image_shape: [image.size[1], image.size[0]],
+                     K.learning_phase(): 0
+                }
+            )
+        # inputs = [padded_image, np.expand_dims(np.array(image.size[::-1]), axis=0)]
 
-        boxes, scores, labels = sess.run(
-                                    [out_boxes, out_scores, out_labels],
-                                     feed_dict = {
-                                         model.input: padded_image,
-                                         input_image_shape: [image.size[1], image.size[0]],
-                                         K.learning_phase(): 0
-                                    }
-                                )
+        # boxes, scores, labels = predict_model.predict(
+        #                 x          = inputs, 
+        #                 batch_size = 1, 
+        #                 verbose    = 0, 
+        #         )
 
         image_boxes         = np.array(boxes)
         image_scores        = np.array(scores)
@@ -125,8 +150,6 @@ def _get(generator, model, score_threshold=0.3, max_detections=20, save_path=Non
             all_annotations[i][label] = annotations[annotations[:, 4] == label, :4].copy()
 
         print('{}/{}'.format(i + 1, generator.size()), end='\r')
-
-    sess.close()
 
     return all_detections, all_annotations
 
@@ -151,7 +174,7 @@ def evaluate(
         A dict mapping class names to mAP scores.
     """
     # gather all detections and annotations
-    all_detections, all_annotations = _get(generator, model, score_threshold=score_threshold, max_detections=max_detections, save_path=save_path)
+    all_detections, all_annotations = _get(generator=generator, model=model, score_threshold=score_threshold, max_detections=max_detections, save_path=save_path)
 
     average_precisions = {}
 

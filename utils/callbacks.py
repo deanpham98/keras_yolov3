@@ -127,13 +127,13 @@ class Metrics(keras.callbacks.Callback):
 
         # run evaluation
         average_precisions = evaluate(
-                            generator=self.generator,
-			    model=self.model,
-			    iou_threshold=self.iou_threshold,
-			    score_threshold=self.score_threshold,
-			    max_detections=self.max_detections,
-			    save_path=self.save_path
-        )
+                generator       = self.generator,
+			    model           = self.model,
+			    iou_threshold   = self.iou_threshold,
+			    score_threshold = self.score_threshold,
+			    max_detections  = self.max_detections,
+			    save_path       = self.save_path
+            )
 
         self.mAP = sum(average_precisions.values()) / len(average_precisions)
 
