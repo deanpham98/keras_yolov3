@@ -1,6 +1,6 @@
 import argparse
-from yolo import YOLO
-from yolo import detect_video
+from predict_image import YOLO
+from predict_image import detect_video
 
 
 
