@@ -19,11 +19,11 @@ from PIL import Image, ImageFont, ImageDraw
 
 
 # Allow relative import
-if __name__ == '__main__' and __package__ is None:
-    sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', '..'))
-    import yolov3.main
-    __package__ = 'yolov3.main'
-from ..utils.model import yolo_eval
+#if __name__ == '__main__' and __package__ is None:
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', '..'))
+import yolov3.main
+__package__ = 'yolov3.main'
+from ..utils.model import yolo_eval, yolo_training
 
 
 def letterbox_image(image, size):
@@ -41,11 +41,11 @@ def letterbox_image(image, size):
 
 class YOLO(object):
     def __init__(self):
-        self.model_path = '/yolov3/models/original.h5'
+        self.weights_path = '010-0.83793.weights'
         self.anchors_path = '/yolov3/data/coco_anchors.txt'
-        self.classes_path = '/yolov3/data/classes/coco_classes.txt'
-        self.score = 0.3
-        self.iou = 0.5
+        self.classes_path = '/yolov3/data/classes/voc_classes.txt'
+        self.score = 0.4
+        self.iou = 0.4
         self.class_names = self._get_class()
         self.anchors = self._get_anchors()
         self.sess = K.get_session()
@@ -69,11 +69,11 @@ class YOLO(object):
         return anchors
 
     def generate(self):
-        model_path = os.path.expanduser(self.model_path)
-        assert model_path.endswith('.h5'), 'Keras model must be a .h5 file.'
+        #weights_path = os.path.expanduser(self.weights_path)
+        assert self.weights_path.endswith('.weights'), 'Keras model must be a .h5 file.'
 
-        self.yolo_model = load_model(model_path, compile=False)
-        print('{} model, anchors, and classes loaded.'.format(model_path))
+        self.yolo_model, _ = yolo_training(num_classes=len(self.class_names), weights_path=self.weights_path)
+#        print('{} model, anchors, and classes loaded.'.format(model_path))
 
         # Generate colors for drawing bounding boxes.
         hsv_tuples = [(x / len(self.class_names), 1., 1.)
@@ -168,19 +168,31 @@ class YOLO(object):
 def detect_video(yolo, video_path, output_path):
     import cv2
     vid = cv2.VideoCapture(video_path)
-    frame_w = int(vid.get(cv2.CAP_PROP_FRAME_WIDTH))
-    frame_h = int(vid.get(cv2.CAP_PROP_FRAME_HEIGHT))
-    out = cv2.VideoWrite(output_path, cv2.VideoWriter_fourcc(*'mp4v'), 25.0, (frame_w, frame_h))
+   # frame_w = int(vid.get(cv2.CAP_PROP_FRAME_WIDTH))
+   # frame_h = int(vid.get(cv2.CAP_PROP_FRAME_HEIGHT))
+   # out = cv2.VideoWriter(output_path, cv2.VideoWriter_fourcc(*'mp4v'), 25.0, (frame_w, frame_h))
     if not vid.isOpened():
         raise IOError("Couldn't open webcam or video")
     accum_time = 0
     curr_fps = 0
     fps = "FPS: ??"
     prev_time = timer()
-    while True:
+    while vid.isOpened():
         return_value, frame = vid.read()
+        if frame is None:
+       #       cv2.destroyAllWindows()
+              break
         image = Image.fromarray(frame)
         image = yolo.detect_image(image)
+   #     result = np.asarray(image)
+        #cv2.putText(result, text=fps, org=(3, 15), fontFace=cv2.FONT_HERSHEY_SIMPLEX,
+         #           fontScale=0.50, color=(255, 0, 0), thickness=2)
+   #     cv2.namedWindow("result", cv2.WINDOW_NORMAL)
+   #     cv2.imshow("result", result)
+   #     while True:
+   #           if cv2.waitKey(0):
+   #                cv2.destroyAllWindows()
+   #                break
         result = np.asarray(image)
         curr_time = timer()
         exec_time = curr_time - prev_time
@@ -193,13 +205,13 @@ def detect_video(yolo, video_path, output_path):
             curr_fps = 0
         cv2.putText(result, text=fps, org=(3, 15), fontFace=cv2.FONT_HERSHEY_SIMPLEX,
                     fontScale=0.50, color=(255, 0, 0), thickness=2)
-#        cv2.namedWindow("result", cv2.WINDOW_NORMAL)
+        cv2.namedWindow("result", cv2.WINDOW_NORMAL)
         cv2.imshow("result", result)
-        out.write
+        #out.write(result)
         if cv2.waitKey(1) & 0xFF == ord('q'):
             cv2.destroyAllWindows()
             break
-    out.release()
+   # out.release()
     vid.release()
     yolo.close_session()
 

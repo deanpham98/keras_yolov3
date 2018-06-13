@@ -1,3 +1,2 @@
 cd $(dirname "$0")/../main/
-python train.py --no-transform --no-enhance --batch-size 16 --steps 312 --epochs 20 --training-data voc_train.txt --validation-data 2007_train.txt --classes-file voc_classes.txt --tensorboard
-
+python train.py --no-transform --batch-size 32 --steps 1500 --epochs 30 --training-data coco_train2014.txt --validation-data coco_val2014.txt --classes-file classes.txt --weights-path original.weights --tensorboard

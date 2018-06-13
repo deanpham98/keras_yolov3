@@ -41,6 +41,8 @@ def parse_args(args):
 	parser.add_argument('--batch-size', help='Minibatch size.', type=int, default=8)
 	parser.add_argument('--steps', help='Number of steps per epoch to train.', type=int, default=100)
 	parser.add_argument('--tensorboard', help='Logging data infos with tensorboard.', action='store_true')
+	parser.add_argument('--weights-path', help='Path to weights file.', type=str, required=True)
+	parser.add_argument('--model-path', help='Path to model file.', type=str, required=False, default=None)
 
 	return parser.parse_args(args)
 
@@ -165,7 +167,7 @@ def main(args=None):
         infer_model, model = yolo_training(
 		        num_classes  = train_generator.num_classes(),
 				model_path   = None, # os.path.join(os.path.dirname(__file__), '..', 'models', '')
-				weights_path = 'original.weights'
+				weights_path = args.weights_path
 		    )
 
         print(model.summary())

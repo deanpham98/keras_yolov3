@@ -328,7 +328,7 @@ def yolo_eval(
         class_boxes = tf.boolean_mask(boxes, mask[:, c])
     
         class_box_scores = tf.boolean_mask(box_scores[:, c], mask[:, c])
-    
+        
         nms_index = tf.image.non_max_suppression(
                                 boxes           = class_boxes, 
                                 scores          = class_box_scores, 
