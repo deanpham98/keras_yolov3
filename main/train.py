@@ -10,10 +10,11 @@ import argparse
 import functools
 
 
+import numpy as np
 import tensorflow as tf
 from keras import backend as K
 from keras.optimizers import adam
-from keras.callbacks import TensorBoard
+from keras.callbacks import TensorBoard, ModelCheckpoint, TerminateOnNaN, EarlyStopping, ReduceLROnPlateau, LearningRateScheduler
 
 # Allow relative import
 if __name__ == '__main__' and __package__ is None:
@@ -26,7 +27,7 @@ from ..preprocessing.utils.transform import random_transform_generator
 from ..preprocessing.utils.enhance import random_enhance_generator
 from ..preprocessing.data_generator import DataGenerator
 from ..utils.model import yolo_training
-from ..utils.callbacks import RedirectModel, Metrics
+from ..utils.callbacks import RedirectModel, Metrics, SaveWeights
 
 
 def parse_args(args):
@@ -39,10 +40,14 @@ def parse_args(args):
 	parser.add_argument('--no-enhance', help='Random enhancement on image data.', action='store_true')
 	parser.add_argument('--epochs', help='Number of epochs to train.', type=int, default=10)
 	parser.add_argument('--batch-size', help='Minibatch size.', type=int, default=8)
-	parser.add_argument('--steps', help='Number of steps per epoch to train.', type=int, default=100)
+	parser.add_argument('--steps', help='Number of steps per epoch to train.', type=int, required=False, default=100)
 	parser.add_argument('--tensorboard', help='Logging data infos with tensorboard.', action='store_true')
 	parser.add_argument('--weights-path', help='Path to weights file.', type=str, required=True)
 	parser.add_argument('--model-path', help='Path to model file.', type=str, required=False, default=None)
+	parser.add_argument('--freeze-body', help='Either freeze last all but last 3 layers or darknet53 feature extractor.', type=str, required=False, default='all')
+	parser.add_argument('--anchors-file', help='Name of file of clustered prior bounding boxes.', type=str, required=False, default=None)
+	parser.add_argument('--no-mAP', help='Whether to monitor mAP or val_loss.', action="store_true")
+
 
 	return parser.parse_args(args)
 
@@ -51,6 +56,7 @@ def get_session():
 	config = tf.ConfigProto()
 	config.log_device_placement = False
 	config.gpu_options.allow_growth = True
+	config.gpu_options.per_process_gpu_memory_fraction = 0.6
 
 	return tf.Session(config=config)
 
@@ -65,26 +71,26 @@ def create_generators(args):
 	enhance_generator = None
 	train_generator = None
 	validation_generator = None
+	anchors = np.array(((10,13), (16,30), (33,23), (30,61),
+    (62,45), (59,119), (116,90), (156,198), (373,326)))
+
+	if args.anchors_file is not None:
+		anchors_path = os.path.join(os.path.dirname(__file__), '..', 'data', 'anchors', args.anchors_file)
+		assert os.path.exists(anchors_path), "Anchors file does not exist."
+		with open(anchors_path, 'r') as file:
+			anchors = np.array([float(x) for x in file.readline().split(',')]).reshape(-1, 2)
 
 	if not args.no_transform:
-		transform_generator = random_transform_generator(
-                    min_rotation=-0.1,
-	                max_rotation=0.1,
-                    min_translation=(-0.1, -0.1),
-                    max_translation=(0.1, 0.1),
-                    min_shear=-0.1,
-                    max_shear=0.1,
-                    min_scaling=(0.9, 0.9),
-                    max_scaling=(1.1, 1.1),
-                    flip_x_chance=0.5,
-                    flip_y_chance=0.0
-        )
+		transform_generator = random_transform_generator(flip_x_chance=0.5)
 
 	if not args.no_enhance:
 		enhance_generator = random_enhance_generator(
-                brightness_range=(0.2, 1.8),
-                contrast_range=(0.5, 1.0),
-                sharpness_range=(0.5, 1.5)
+                brightness_range = (0.5, 1.8),
+                contrast_range   = (0.5, 1.0),
+                sharpness_range  = (0.5, 1.5),
+		hue_range        = (-0.5, 0.5),
+		sat              = 2.0,
+		val              = 2.0
             )
 
 	train_generator = DataGenerator(
@@ -103,10 +109,10 @@ def create_generators(args):
 		assert os.path.exists(validation_path), "Validation annotations file does not exist."
 
 		validation_generator = DataGenerator(
-            data_file  = validation_path,
-            class_file = classes_path,
-            training   = False
-        )
+	            data_file  = validation_path,
+        	    class_file = classes_path,
+	            training   = False
+        	)
 
 	return train_generator, validation_generator
 
@@ -118,8 +124,8 @@ def create_callbacks(args, infer_model, validation_generator):
 
 	if args.tensorboard:
 		tensorboard_callback = TensorBoard(
-				log_dir                = os.path.join(os.path.dirname(__file__), '..', 'models', 'logs', time.strftime("%d_%m_%Y_%H_%M_%S")),
-				batch_size             = args.batch_size,
+		log_dir                = os.path.join(os.path.dirname(__file__), '..', 'models', 'logs', time.strftime("%d_%m_%Y_%H_%M_%S")),
+		batch_size             = args.batch_size,
                 write_graph            = True,
                 write_grads            = True,
                 write_images           = True,
@@ -130,28 +136,37 @@ def create_callbacks(args, infer_model, validation_generator):
 
 		callbacks.append(tensorboard_callback)
 
+	callbacks.append(TerminateOnNaN())
+
 	if args.validation_data is not None and validation_generator:
-		metrics_callback = Metrics(
-				generator   = validation_generator,
-		        tensorboard = tensorboard_callback,
-			    filepath    = os.path.join('..', 'models', 'weights', '{epoch:03d}-{mAP:.5f}.weights')
-        )
+		if not args.no_mAP:
+			metrics_callback = Metrics(
+	                    generator      = validation_generator,
+			    tensorboard    = tensorboard_callback,
+		            filepath       = os.path.join('..', 'models', 'weights', '{epoch:03d}-{mAP:.5f}.weights'),
+		            save_best_only = False
+	                )
 
-		metrics_callback = RedirectModel(metrics_callback, infer_model)
+			metrics_callback = RedirectModel(metrics_callback, infer_model)
 
-		callbacks.append(metrics_callback)
+			callbacks.append(metrics_callback)
 
-		return callbacks
+		else:
+			saver_callback = SaveWeights(infer_model)
+
+			callbacks.append(saver_callback)
+
+	return callbacks
 
 
 def train(args, model, train_generator, callbacks):
 
         model.fit_generator(
-			 generator       = train_generator,
-			 steps_per_epoch = args.steps,
-			 epochs          = args.epochs,
-	         verbose         = 1,
-	         callbacks       = callbacks
+		 generator        = train_generator,
+		 steps_per_epoch  = args.steps,
+		 epochs           = args.epochs,
+	         verbose          = 1,
+	         callbacks        = callbacks
         )
 
 def main(args=None):
@@ -166,24 +181,26 @@ def main(args=None):
 
         infer_model, model = yolo_training(
 		        num_classes  = train_generator.num_classes(),
-				model_path   = None, # os.path.join(os.path.dirname(__file__), '..', 'models', '')
-				weights_path = args.weights_path
+			model_path   = None,
+			weights_path = args.weights_path,
+			freeze_body  = args.freeze_body
 		    )
 
         print(model.summary())
 
         callbacks = create_callbacks(
-		     	args                 = args,
-			    infer_model          = infer_model,
-			    validation_generator = validation_generator
+	            args                 = args,
+		    infer_model          = infer_model,
+		    validation_generator = validation_generator
 	    	)
 
         model.compile(
-		 	loss      = {'yolo_loss': (lambda y_true, y_pred : y_pred)},
-		 	optimizer = adam(lr=0.001, decay = 0.00133)
+		 loss      = {'yolo_loss': (lambda y_true, y_pred : y_pred)},
+		 optimizer = adam(lr=0.00025, decay = 0.00133)
 	    )
 
         train(args, model, train_generator, callbacks)
+
 
 if __name__ == '__main__':
 	main()

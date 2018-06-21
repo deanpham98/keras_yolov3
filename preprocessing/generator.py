@@ -104,7 +104,7 @@ class Generator(object):
 
     def random_transform_group_entry(self, image, annotations):
         # randomly transform both image and annotations
-        if self.transform_generator:
+        if self.transform_generator and self.training:
             transform = adjust_transform_for_image(next(self.transform_generator), image, self.transform_parameters.relative_translation)
             image     = apply_transform(transform, image, self.transform_parameters)
 
@@ -126,7 +126,7 @@ class Generator(object):
 
     def random_enhance_group_entry(self, image):
         # randomly transform both image and annotations
-        if self.enhance_generator:
+        if self.enhance_generator and self.training:
             image = self.enhance_generator.random_enhance(image)
 
             # Transform the bounding boxes in the annotations
@@ -275,7 +275,7 @@ class Generator(object):
         for i in range(len(image_group)):
             image_batch[i] = image_group[i]
         # compute y_true
-        y_true = self.compute_y_true(annotations_group) 
+        y_true = self.compute_y_true(annotations_group)
 
         return [image_batch, *y_true], np.zeros(self.batch_size)
 

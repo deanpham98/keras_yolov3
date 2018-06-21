@@ -1,6 +1,8 @@
 from __future__ import print_function
 from __future__ import absolute_import
 
+import os
+import time
 import warnings
 
 import numpy as np
@@ -8,6 +10,17 @@ import keras
 import tensorflow as tf
 
 from .metrics import evaluate
+
+
+class SaveWeights(keras.callbacks.Callback):
+	def __init__ (self, infer_model):
+		self.infer_model  = infer_model
+		self.weights_path = os.path.join(os.path.dirname(__file__), '..', 'models', 'weights')
+
+		super(SaveWeights, self).__init__()
+
+	def on_epoch_end(self, epoch, logs=None):
+		self.infer_model.save_weights(os.path.join(self.weights_path, 'epoch_' + str(epoch) + time.strftime("_%d_%m_%Y_%H_%M_%S") + '.weights'))
 
 
 class RedirectModel(keras.callbacks.Callback):
@@ -128,12 +141,12 @@ class Metrics(keras.callbacks.Callback):
         # run evaluation
         average_precisions = evaluate(
                 generator       = self.generator,
-			    model           = self.model,
-			    iou_threshold   = self.iou_threshold,
-			    score_threshold = self.score_threshold,
-			    max_detections  = self.max_detections,
-			    save_path       = self.save_path
-            )
+		model           = self.model,
+		iou_threshold   = self.iou_threshold,
+		score_threshold = self.score_threshold,
+		max_detections  = self.max_detections,
+		save_path       = self.save_path
+       )
 
         self.mAP = sum(average_precisions.values()) / len(average_precisions)
 
@@ -179,4 +192,3 @@ class Metrics(keras.callbacks.Callback):
         if self.verbose == 1:
             for label, average_precision in average_precisions.items():
                 print(self.generator.label_to_name(label), '{:.4f}'.format(average_precision))
-

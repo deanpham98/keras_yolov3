@@ -223,6 +223,7 @@ def _main(args):
     model = Model(inputs=input_layer, outputs=[all_layers[i] for i in out_index])
     print(model.summary())
     model.save('{}'.format(output_path))
+    model.save_weights('/yolov3/models/weights/original.weights')
     print('Saved Keras model to {}'.format(output_path))
     # Check to see if all weights have been read.
     remaining_weights = len(weights_file.read()) / 4

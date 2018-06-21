@@ -1,0 +1,6 @@
+car
+traffic_light
+people
+motorist
+bus
+truck

@@ -3,9 +3,10 @@ import numpy as np
 import tensorflow as tf
 from keras import backend as K
 from keras.models import Model
-from keras.layers import Input, Lambda 
+from keras.layers import Input, Lambda
 
 from .model import yolo_eval
+from .visualize import draw
 
 # from keras.models import Model
 
@@ -80,7 +81,7 @@ def _get(generator, model, score_threshold=0.3, max_detections=20, save_path=Non
             score_threshold = score_threshold,
             iou_threshold   = 0.5
         )
-    
+
     for i in range(generator.size()):
 
         annotations = generator.load_annotations(i)
@@ -90,7 +91,7 @@ def _get(generator, model, score_threshold=0.3, max_detections=20, save_path=Non
         size = generator.input_shape
         width, height = size
         img_width, img_height = image.size
-        
+
         scale = min(width / img_width, height / img_height)
         new_width = int(img_width * scale)
         new_height = int(img_height * scale)
@@ -101,7 +102,7 @@ def _get(generator, model, score_threshold=0.3, max_detections=20, save_path=Non
 
         padded_image = np.array(padded_image, dtype='float32')
         padded_image = np.expand_dims(padded_image / 255., axis=0)
-        
+
         boxes, scores, labels = K.get_session().run(
                 [out_boxes, out_scores, out_labels],
                  feed_dict = {
@@ -118,6 +119,16 @@ def _get(generator, model, score_threshold=0.3, max_detections=20, save_path=Non
         image_boxes[:, 2:4] = np.minimum(np.ones(image_boxes[:, 3:1:-1].shape) * generator.load_image(i).shape[1::-1], np.floor(image_boxes[:, 3:1:-1] + 0.5))
 
         image_detections    = np.concatenate([image_boxes[:, 0:2], image_boxes[:, 2:4], np.expand_dims(image_scores, axis=1), np.expand_dims(image_labels, axis=1)], axis=1)
+
+	### >>>> Visualize detections and annotations
+
+        #names = ['detections', 'annotations']
+        #images = [generator.load_image(i), generator.load_image(i)]
+        #annots = [image_detections, np.concatenate([annotations[:, 0:4], np.ones_like(annotations[:, 0:1]), annotations[:, 4:5]], axis=-1)]
+
+        #draw(images, annots, names)
+
+	### >>>> Visualize detections and annotations
 
         # copy detections to all_detections
         for label in range(generator.num_classes()):

@@ -125,7 +125,7 @@ def yolo_training(
                            (59,119), (116,90), (156,198), (373,326))),
          model_path   = None,
          weights_path = None,
-         freeze_body  = True
+         freeze_body  = 'all'
    ):
 
     # Assume the weights path is available and exists
@@ -161,10 +161,13 @@ def yolo_training(
     infer_model.load_weights(weights_path, by_name=True, skip_mismatch=True)
 
     # Freeze the weights of some layers for fine-tuning
-    if freeze_body:
+    assert freeze_body in ['all', 'darknet53'], "Either freeze all but last 3 layers or freeze darknet53 feature extractor."
+    if freeze_body == 'all':
         for layer_index in range(len(infer_model.layers) - 3):
             infer_model.layers[layer_index].trainable = False
-
+    elif freeze_body == 'darknet53':
+        for layer_index in range(185):
+            infer_model.layers[layer_index].trainable = False
     # Custom output layer for training with output as the value of objective function which we want to optimize
     loss_layer = Lambda(
                     function     = yolo_loss,
@@ -172,10 +175,10 @@ def yolo_training(
                     name         = 'yolo_loss',
                     arguments    = {'anchors': anchors, 'num_classes': num_classes}
                 )([*infer_model.output, *y_true])
-    
+
     # Build the training model
     model = Model(
-               inputs  = [infer_model.input, *y_true], 
+               inputs  = [infer_model.input, *y_true],
                outputs = loss_layer
            )
 
@@ -185,7 +188,7 @@ def yolo_training(
 
 def yolo_head(feats, anchors, num_classes, input_shape, calc_loss=False):
     """Convert final layer features to bounding box parameters.
-    
+
     Arguments:
     - feats: outputs of detection layers of YOLOv3
     - anchors: anchor boxes at a specified detection layer
@@ -201,9 +204,9 @@ def yolo_head(feats, anchors, num_classes, input_shape, calc_loss=False):
     # Outputs of each detection layer has shape (batch_size, height, width, num_anchors * (5 + num_classes))
     # grid_shape tells the shape (height, width) of the detection layer
     # grid_shape is a tensor of shape (None, None)
-    grid_shape = K.shape(feats)[1:3] 
+    grid_shape = K.shape(feats)[1:3]
 
-    # 
+    #
     grid_y = K.tile(K.reshape(K.arange(0, stop=grid_shape[0]), [-1, 1, 1, 1]), [1, grid_shape[1], 1, 1])
     grid_x = K.tile(K.reshape(K.arange(0, stop=grid_shape[1]), [1, -1, 1, 1]), [grid_shape[0], 1, 1, 1])
 
@@ -230,7 +233,7 @@ def yolo_head(feats, anchors, num_classes, input_shape, calc_loss=False):
     # Adjust predictions to each spatial grid point and anchor size.
     box_xy = (box_xy + grid) / K.cast(grid_shape[::-1], K.dtype(feats))
     box_wh = box_wh * anchors_tensor / K.cast(input_shape[::-1], K.dtype(feats))
-    
+
     if calc_loss == True:
     	return grid, feats, box_xy, box_wh, anchors_tensor
     return box_xy, box_wh, box_confidence, box_class_probs
@@ -291,18 +294,18 @@ def yolo_eval(
     anchor_mask = [[6,7,8], [3,4,5], [0,1,2]]
 
     input_shape = K.shape(yolo_outputs[0])[1:3] * 32
-    
+
     boxes = []
-    
+
     box_scores = []
-    
+
     for l in range(3):
-    
+
         _boxes, _box_scores = yolo_boxes_and_scores(
                                     feats       = yolo_outputs[l],
-                                    anchors     = anchors[anchor_mask[l]], 
-                                    num_classes = num_classes, 
-                                    input_shape = input_shape, 
+                                    anchors     = anchors[anchor_mask[l]],
+                                    num_classes = num_classes,
+                                    input_shape = input_shape,
                                     image_shape = image_shape,
                               )
 
@@ -323,29 +326,29 @@ def yolo_eval(
     classes_ = []
 
     for c in range(num_classes):
-    
+
         # TODO: use keras backend instead of tf.
         class_boxes = tf.boolean_mask(boxes, mask[:, c])
-    
+
         class_box_scores = tf.boolean_mask(box_scores[:, c], mask[:, c])
-        
+
         nms_index = tf.image.non_max_suppression(
-                                boxes           = class_boxes, 
-                                scores          = class_box_scores, 
-                                max_output_size = max_boxes_tensor, 
+                                boxes           = class_boxes,
+                                scores          = class_box_scores,
+                                max_output_size = max_boxes_tensor,
                                 iou_threshold   = iou_threshold
                             )
 
         class_boxes = K.gather(class_boxes, nms_index)
-        
+
         class_box_scores = K.gather(class_box_scores, nms_index)
 
         classes = K.ones_like(class_box_scores, 'int32') * c
-        
+
         boxes_.append(class_boxes)
         scores_.append(class_box_scores)
         classes_.append(classes)
-    
+
     boxes_ = K.concatenate(boxes_, axis=0)
     scores_ = K.concatenate(scores_, axis=0)
     classes_ = K.concatenate(classes_, axis=0)
@@ -413,7 +416,7 @@ def yolo_loss(args, anchors, num_classes, ignore_thresh=.5):
 
     # YOLOv3 outputs are 3 numpy array of shape (batch_size, height, width, num_anchors * (5 + num_classes))
     yolo_outputs = args[:3]
-    
+
     # Ground truth is a list of 3 numpy array of shape (batch_size, height, width, num_anchors, 5 + num_classes)
     y_true = args[3:]
 
@@ -422,17 +425,17 @@ def yolo_loss(args, anchors, num_classes, ignore_thresh=.5):
 
     # Input shape is 32 times more than the first detection layer shape
     input_shape = K.cast(K.shape(yolo_outputs[0])[1:3] * 32, K.dtype(y_true[0]))
-    
+
     # Shapes of each detection layer
     grid_shapes = [K.cast(K.shape(yolo_outputs[layer])[1:3], K.dtype(y_true[0])) for layer in range(3)]
-    
+
     # Initialize loss
     xy_loss = 0
     wh_loss = 0
     confidence_loss = 0
     class_loss = 0
     loss = 0
-    
+
     batch_size = K.shape(yolo_outputs[0])[0]
 
     for layer in range(3):
@@ -482,15 +485,15 @@ def yolo_loss(args, anchors, num_classes, ignore_thresh=.5):
             best_iou = K.max(iou, axis=-1)
 
             ignore_mask = ignore_mask.write(
-                                        index = b, 
+                                        index = b,
                                         value = K.cast(best_iou < ignore_thresh, K.dtype(true_box))
                                       )
 
             return b + 1, ignore_mask
 
         _, ignore_mask = tf.while_loop(
-                             cond      = lambda b, *args: b < batch_size, 
-                             body      = loop_body, 
+                             cond      = lambda b, *args: b < batch_size,
+                             body      = loop_body,
                              loop_vars = [0, ignore_mask]
                          )
 
@@ -514,12 +517,7 @@ def yolo_loss(args, anchors, num_classes, ignore_thresh=.5):
 
         class_loss += K.sum(object_mask * K.binary_crossentropy(true_class_probs, y_pred[..., 5:], from_logits=True))
 
-    tf.summary.scalar('xy_loss', xy_loss)
-    tf.summary.scalar('wh_loss', wh_loss)
-    tf.summary.scalar('confidence_loss', confidence_loss)
-    tf.summary.scalar('class_loss', class_loss)
 
     loss += xy_loss + wh_loss + confidence_loss + class_loss
-    tf.summary.scalar('loss', loss)
 
     return loss

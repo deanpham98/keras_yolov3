@@ -41,11 +41,11 @@ def letterbox_image(image, size):
 
 class YOLO(object):
     def __init__(self):
-        self.weights_path = '010-0.83793.weights'
-        self.anchors_path = '/yolov3/data/coco_anchors.txt'
-        self.classes_path = '/yolov3/data/classes/voc_classes.txt'
-        self.score = 0.4
-        self.iou = 0.4
+        self.weights_path = 'epoch_4_21_06_2018_13_02_08.weights'
+        self.anchors_path = '/yolov3/data/anchors/bdd_anchors.txt'
+        self.classes_path = '/yolov3/data/classes/bdd_classes.txt'
+        self.score = 0.3
+        self.iou = 0.5
         self.class_names = self._get_class()
         self.anchors = self._get_anchors()
         self.sess = K.get_session()
@@ -72,7 +72,7 @@ class YOLO(object):
         #weights_path = os.path.expanduser(self.weights_path)
         assert self.weights_path.endswith('.weights'), 'Keras model must be a .h5 file.'
 
-        self.yolo_model, _ = yolo_training(num_classes=len(self.class_names), weights_path=self.weights_path)
+        self.yolo_model, _ = yolo_training(num_classes=len(self.class_names), weights_path=self.weights_path, freeze_body='all')
 #        print('{} model, anchors, and classes loaded.'.format(model_path))
 
         # Generate colors for drawing bounding boxes.
@@ -168,9 +168,9 @@ class YOLO(object):
 def detect_video(yolo, video_path, output_path):
     import cv2
     vid = cv2.VideoCapture(video_path)
-   # frame_w = int(vid.get(cv2.CAP_PROP_FRAME_WIDTH))
-   # frame_h = int(vid.get(cv2.CAP_PROP_FRAME_HEIGHT))
-   # out = cv2.VideoWriter(output_path, cv2.VideoWriter_fourcc(*'mp4v'), 25.0, (frame_w, frame_h))
+    frame_w = int(vid.get(cv2.CAP_PROP_FRAME_WIDTH))
+    frame_h = int(vid.get(cv2.CAP_PROP_FRAME_HEIGHT))
+    out = cv2.VideoWriter(output_path, cv2.VideoWriter_fourcc(*'mp4v'), 25.0, (frame_w, frame_h))
     if not vid.isOpened():
         raise IOError("Couldn't open webcam or video")
     accum_time = 0
@@ -180,7 +180,7 @@ def detect_video(yolo, video_path, output_path):
     while vid.isOpened():
         return_value, frame = vid.read()
         if frame is None:
-       #       cv2.destroyAllWindows()
+              cv2.destroyAllWindows()
               break
         image = Image.fromarray(frame)
         image = yolo.detect_image(image)
@@ -207,11 +207,11 @@ def detect_video(yolo, video_path, output_path):
                     fontScale=0.50, color=(255, 0, 0), thickness=2)
         cv2.namedWindow("result", cv2.WINDOW_NORMAL)
         cv2.imshow("result", result)
-        #out.write(result)
+        out.write(result)
         if cv2.waitKey(1) & 0xFF == ord('q'):
             cv2.destroyAllWindows()
             break
-   # out.release()
+    out.release()
     vid.release()
     yolo.close_session()
 
