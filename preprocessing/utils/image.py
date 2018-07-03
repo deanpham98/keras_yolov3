@@ -15,7 +15,20 @@ def read_image_bgr(path):
          image = np.asarray(Image.open(path).convert('RGB'))
     except:
          pdb.set_trace()
-    return image[:, :, ::-1].copy() 
+    return image[:, :, ::-1].copy()
+
+
+def letterbox_image(image, input_shape):
+	iw, ih = image.size
+	w, h = input_shape
+	scale = min(w/iw, h/ih)
+	nw = int(iw*scale)
+	nh = int(ih*scale)
+
+	image = image.resize((nw,nh), Image.BICUBIC)
+	new_image = Image.new('RGB', input_shape, (128,128,128))
+	new_image.paste(image, ((w-nw)//2, (h-nh)//2))
+	return new_image
 
 
 def adjust_transform_for_image(transform, image, relative_translation):
@@ -123,22 +136,16 @@ def apply_transform(matrix, image, params):
 
 
 def resize_image(img, annotations, input_shape=(416, 416)):
-    img = Image.fromarray(img.astype('uint8'), 'RGB')
-    img_w, img_h = img.size
-    w, h = input_shape
-    new_w = int(img_w * min(w/img_w, h/img_h))
-    new_h = int(img_h * min(w/img_w, h/img_h))
-    resized_image = img.resize((new_w,new_h), Image.BICUBIC)
-    boxed_image = Image.new('RGB', input_shape, (128,128,128))
-    boxed_image.paste(resized_image, ((w-new_w)//2,(h-new_h)//2))
-    img_size = np.array(img.size)
-    input_size = np.array(input_shape[::-1])
-    new_size = (img_size * np.min(input_size/img_size)).astype('int32')
-    annotations[:, 0:2] = (annotations[:, 0:2] * new_size/img_size + (input_size - new_size)/2)
-    annotations[:, 2:4] = (annotations[:, 2:4] * new_size/img_size + (input_size - new_size)/2)
-    filter = (annotations[:, 2] - annotations[:, 0] > 3) * (annotations[:, 3] - annotations[:, 1] > 3)
-    annotations = annotations[filter]
+	img = Image.fromarray(img.astype('uint8'), 'RGB')
+	boxed_image = letterbox_image(img, input_shape)
+	img_size = np.array(img.size)
+	input_size = np.array(input_shape[::-1])
+	new_size = (img_size * np.min(input_size/img_size)).astype('int32')
+	annotations[:, 0:2] = (annotations[:, 0:2] * new_size/img_size + (input_size - new_size)/2)
+	annotations[:, 2:4] = (annotations[:, 2:4] * new_size/img_size + (input_size - new_size)/2)
+	filter = (annotations[:, 2] - annotations[:, 0] > 3) * (annotations[:, 3] - annotations[:, 1] > 3)
+	annotations = annotations[filter]
 
-    return np.array(boxed_image), annotations.astype('int32')
+	return np.array(boxed_image), annotations.astype('int32')
 
 

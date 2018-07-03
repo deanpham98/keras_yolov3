@@ -1,7 +1,0 @@
-bus
-car
-person
-rider
-traffic light
-traffic sign
-truck

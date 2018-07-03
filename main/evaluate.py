@@ -2,6 +2,8 @@ import os
 import sys
 import argparse
 
+import numpy as np
+
 # Allow relative import
 if __name__ == '__main__' and __package__ is None:
 	sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', '..'))
@@ -19,20 +21,36 @@ def parse_args(args):
 	parser.add_argument('--classes-file', help='Path to classes file.', type=str, required=True)
 	parser.add_argument('--weights-path', help='Path to weights file.', type=str, required=True)
 	parser.add_argument('--model-path', help='Path to model file.', type=str, required=False, default=None)
+	parser.add_argument('--anchors-file', help='Filename of anchors file.', type=str, required=True)
+	parser.add_argument('--visualize', help='Boolean flag determining whether to visualize evaluations.', action='store_true')
 
 	return parser.parse_args(args)
 
+def get_anchors(filepath):
+
+	anchors = None
+	with open(filepath, 'r') as file:
+		anchors = np.array([float(x) for x in file.readline().split(',')]).reshape(-1, 2)
+	return anchors
+
 def create_generator(args):
 
-	evaluation_path = os.path.join(os.path.dirname(__file__), '..', 'data', 'annotations', args.evaluation_data)
-	classes_path = os.path.join(os.path.dirname(__file__), '..', 'data', 'classes', args.classes_file)
+	evaluation_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', 'data', 'annotations', args.evaluation_data)
+	classes_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', 'data', 'classes', args.classes_file)
 	assert os.path.exists(evaluation_path), "Evaluation annotations file does not exist."
 	assert os.path.exists(classes_path), "Classes file does not exist."
+
+	filepath = os.path.join(os.path.dirname(__file__), '..', 'data', 'anchors', args.anchors_file)
+
+	assert os.path.exists(filepath) and filepath[-4:] == '.txt', "Incorrect anchors file provided."
+
+	anchors = get_anchors(filepath)
 
 	evaluation_generator = DataGenerator(
 		data_file  = evaluation_path,
 		class_file = classes_path,
-		training   = False
+		training   = False,
+		anchors    = anchors
 	)
 
 	return evaluation_generator
@@ -66,7 +84,8 @@ def main(args=None):
 		generator       = evaluation_generator,
 		model           = model,
 		iou_threshold   = 0.5,
-		score_threshold = 0.3
+		score_threshold = 0.3,
+		visualize       = args.visualize
 	)
 
 	print('mAP:', sum(APs.values()) / len(APs), end='\n')

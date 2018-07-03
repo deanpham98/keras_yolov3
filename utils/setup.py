@@ -18,18 +18,11 @@ from keras.layers.advanced_activations import LeakyReLU
 from keras.layers.normalization import BatchNormalization
 from keras.models import Model
 from keras.regularizers import l2
-from keras.utils.vis_utils import plot_model as plot
 
 
 parser = argparse.ArgumentParser(description='Darknet To Keras Converter.')
-parser.add_argument('config_path', help='Path to configuration file.')
-parser.add_argument('weights_path', help='Path to yolov3 weights file.')
-parser.add_argument('output_path', help='Output path of model.')
-parser.add_argument(
-    '-p',
-    '--plot_model',
-    help='Plot generated Keras model and save as image.',
-    action='store_true')
+parser.add_argument('--config_file', help='Name of configuration file.', type=str, required=True)
+parser.add_argument('--weights_file', help='Name of yolov3 darknet weights file.', type=str, required=True)
 
 def unique_config_sections(config_file):
     """Convert all config sections to have unique names.
@@ -51,17 +44,14 @@ def unique_config_sections(config_file):
 
 # %%
 def _main(args):
-    config_path = os.path.expanduser(args.config_path)
-    weights_path = os.path.expanduser(args.weights_path)
+    config_path = os.path.join(os.path.dirname(__file__), '..', 'mode_data', 'config', args.config_file)
+    weights_path = os.path.join(os.path.dirname(__file__), '..', 'model_data', 'weights', args.weights_file)
+    assert os.path.isfile(config_path), 'Invalid configuration file.'
+    assert os.path.isfile(weights_path), 'Invalid weights file.'
     assert config_path.endswith('.cfg'), '{} is not a .cfg file'.format(
         config_path)
     assert weights_path.endswith(
         '.weights'), '{} is not a .weights file'.format(weights_path)
-
-    output_path = os.path.expanduser(args.output_path)
-    assert output_path.endswith(
-        '.h5'), 'output path {} is not a .h5 file'.format(output_path)
-    output_root = os.path.splitext(output_path)[0]
 
     # Load weights and config.
     print('Loading weights.')
@@ -200,7 +190,7 @@ def _main(args):
             assert activation == 'linear', 'Only linear activation supported.'
             all_layers.append(Add()([all_layers[index], prev_layer]))
             prev_layer = all_layers[-1]
-        
+
         elif section.startswith('upsample'):
             stride = int(cfg_parser[section]['stride'])
             assert stride == 2, 'Only stride=2 supported.'
@@ -222,9 +212,8 @@ def _main(args):
     # Create and save model.
     model = Model(inputs=input_layer, outputs=[all_layers[i] for i in out_index])
     print(model.summary())
-    model.save('{}'.format(output_path))
-    model.save_weights('/yolov3/models/weights/original.weights')
-    print('Saved Keras model to {}'.format(output_path))
+    model.save(os.path.join(os.path.dirname(__file__), '..', 'model_data', 'models', 'original.h5'))
+    model.save_weights(os.path.join(os.path.dirname(__file__), '..', 'model_data', 'weights', 'original.hdf5')
     # Check to see if all weights have been read.
     remaining_weights = len(weights_file.read()) / 4
     weights_file.close()
@@ -232,11 +221,7 @@ def _main(args):
                                                        remaining_weights))
     if remaining_weights > 0:
         print('Warning: {} unused weights'.format(remaining_weights))
-
-    if args.plot_model:
-        plot(model, to_file='{}.png'.format(output_root), show_shapes=True)
-        print('Saved model plot to {}.png'.format(output_root))
-
+    os.remove(weights_path)
 
 if __name__ == '__main__':
     _main(parser.parse_args())

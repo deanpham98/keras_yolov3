@@ -1,7 +1,10 @@
 #!/bin/bash
 
+# Specify where to save VOCdevkit
+DATA=
+
 # Go to data directory
-cd ../data/
+cd $DATA
 
 # Download data
 wget https://pjreddie.com/media/files/VOCtrainval_11-May-2012.tar

@@ -1,7 +1,10 @@
 #!/bin/bash
 
+# Specify where to save COCO
+DATA=
+
 # Go to data directory
-cd ../data/
+cd $DATA
 
 # Clone COCO API
 git clone https://github.com/pdollar/coco COCO

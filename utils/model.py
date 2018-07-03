@@ -142,7 +142,7 @@ def yolo_training(
     if model_path is not None:
         # Check if model path exists
 
-        model_path = os.path.join(os.path.dirname(__file__), '..', 'models', model_path)
+        model_path = os.path.join(os.path.dirname(__file__), '..', 'model_data', 'models', model_path)
 
         assert os.path.exists(model_path), "Model path does not exist"
         # Load uncompiled infer model
@@ -153,7 +153,7 @@ def yolo_training(
         # Rebuild the infer model
         infer_model = yolo_body(image_input, num_anchors, num_classes)
 
-    weights_path = os.path.join(os.path.dirname(__file__), '..', 'models', 'weights', weights_path)
+    weights_path = os.path.join(os.path.dirname(__file__), '..', 'model_data', 'weights', weights_path)
 
     assert os.path.exists(weights_path), "Weights path does not exist"
 

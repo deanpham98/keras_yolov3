@@ -2,13 +2,11 @@ from PIL import Image
 import numpy as np
 import tensorflow as tf
 from keras import backend as K
-from keras.models import Model
 from keras.layers import Input, Lambda
 
 from .model import yolo_eval
 from .visualize import draw
 
-# from keras.models import Model
 
 def compute_overlap(a, b):
     """
@@ -20,8 +18,6 @@ def compute_overlap(a, b):
     -------
     overlaps: (N, K) ndarray of overlap between boxes and query_boxes
     """
-    # import pdb
-    # pdb.set_trace()
     area = (b[:, 2] - b[:, 0]) * (b[:, 3] - b[:, 1])
 
     iw = np.minimum(np.expand_dims(a[:, 2], axis=1), b[:, 2]) - np.maximum(np.expand_dims(a[:, 0], 1), b[:, 0])
@@ -64,7 +60,7 @@ def _compute_ap(recall, precision):
     ap = np.sum((mrec[i + 1] - mrec[i]) * mpre[i + 1])
     return ap
 
-def _get(generator, model, score_threshold=0.3, max_detections=20, save_path=None):
+def _get(generator, model, score_threshold=0.3, max_detections=20, save_path=None, visualize=False):
 
     all_detections = [[None for i in range(generator.num_classes())] for j in range(generator.size())]
     all_annotations = [[None for i in range(generator.num_classes())] for j in range(generator.size())]
@@ -120,15 +116,13 @@ def _get(generator, model, score_threshold=0.3, max_detections=20, save_path=Non
 
         image_detections    = np.concatenate([image_boxes[:, 0:2], image_boxes[:, 2:4], np.expand_dims(image_scores, axis=1), np.expand_dims(image_labels, axis=1)], axis=1)
 
-	### >>>> Visualize detections and annotations
+        if visualize:
 
-        #names = ['detections', 'annotations']
-        #images = [generator.load_image(i), generator.load_image(i)]
-        #annots = [image_detections, np.concatenate([annotations[:, 0:4], np.ones_like(annotations[:, 0:1]), annotations[:, 4:5]], axis=-1)]
-
-        #draw(images, annots, names)
-
-	### >>>> Visualize detections and annotations
+            names = ['detections', 'annotations']
+            images = [generator.load_image(i), generator.load_image(i)]
+            annots = [image_detections, np.concatenate([annotations[:, 0:4], np.ones_like(annotations[:, 0:1]), annotations[:, 4:5]], axis=-1)]
+            classes = {i: generator.label_to_name(i) for i in range(generator.num_classes())}
+            draw(dict(zip(names, list(zip(images, annots)))), classes)
 
         # copy detections to all_detections
         for label in range(generator.num_classes()):
@@ -143,10 +137,11 @@ def _get(generator, model, score_threshold=0.3, max_detections=20, save_path=Non
 def evaluate(
     generator,
     model,
-    iou_threshold=0.5,
-    score_threshold=0.3,
-    max_detections=20,
-    save_path=None
+    iou_threshold   = 0.5,
+    score_threshold = 0.3,
+    max_detections  = 20,
+    save_path       = None,
+    visualize       = False
 ):
     """ Evaluate a given dataset using a given model.
     # Arguments
@@ -160,7 +155,14 @@ def evaluate(
         A dict mapping class names to mAP scores.
     """
     # gather all detections and annotations
-    all_detections, all_annotations = _get(generator=generator, model=model, score_threshold=score_threshold, max_detections=max_detections, save_path=save_path)
+    all_detections, all_annotations = _get(
+		generator       = generator,
+		model           = model,
+		score_threshold = score_threshold,
+		max_detections  = max_detections,
+		save_path       = save_path,
+		visualize       = visualize
+	)
 
     average_precisions = {}
     # process detections and annotations

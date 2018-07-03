@@ -14,6 +14,7 @@ from .utils.image import (
     resize_image,
 )
 from .utils.transform import transform_aabb
+from ..utils.visualize import draw
 
 class Generator(object):
     def __init__(
@@ -27,7 +28,8 @@ class Generator(object):
         transform_parameters=None,
         anchors=np.array(((10,13), (16,30), (33,23), (30,61),
     (62,45), (59,119), (116,90), (156,198), (373,326))),
-        training=True
+        training=True,
+        visualize=False
     ):
         self.transform_generator    = transform_generator
         self.enhance_generator      = enhance_generator
@@ -40,6 +42,7 @@ class Generator(object):
         self.group_index            = 0
         self.lock                   = threading.Lock()
         self.training               = training
+        self.visualize              = visualize
 
         if self.training == False:
             self.group_method='none'
@@ -48,6 +51,7 @@ class Generator(object):
             self.enhance_generator = None
             self.batch_size = 1
         self.group_images()
+        self.classes = {i: self.label_to_name(i) for i in range(self.num_classes())}
 
     def size(self):
         raise NotImplementedError('size method not implemented')
@@ -106,29 +110,30 @@ class Generator(object):
         # randomly transform both image and annotations
         if self.transform_generator and self.training:
             transform = adjust_transform_for_image(next(self.transform_generator), image, self.transform_parameters.relative_translation)
-            image     = apply_transform(transform, image, self.transform_parameters)
+            transform_image     = apply_transform(transform, image, self.transform_parameters)
 
             # Transform the bounding boxes in the annotations.
-            annotations = annotations.copy()
-            for index in range(annotations.shape[0]):
-                annotations[index, :4] = transform_aabb(transform, annotations[index, :4])
+            transform_annotations = annotations.copy()
+            for index in range(transform_annotations.shape[0]):
+                transform_annotations[index, :4] = transform_aabb(transform, transform_annotations[index, :4])
             x = [True, False, True, False, False]
             y = [False, True, False, True, False]
 
-            annotations[:, x] = np.clip(annotations[:, x], 0, image.shape[1])
-            annotations[:, y] = np.clip(annotations[:, y], 0, image.shape[0])
+            transform_annotations[:, x] = np.clip(transform_annotations[:, x], 0, transform_image.shape[1])
+            transform_annotations[:, y] = np.clip(transform_annotations[:, y], 0, transform_image.shape[0])
 
-            center = (annotations[:, 0:2] + annotations[:, 2:4]) // 2
-            annotations_mask = (center[:, 0] > 0) * (center[:, 0] < image.shape[1]) * (center[:, 1] > 0) * (center[:, 1] < image.shape[0])
-            annotations = annotations[annotations_mask, :]
+            center = (transform_annotations[:, 0:2] + transform_annotations[:, 2:4]) // 2
+            annotations_mask = (center[:, 0] > 0) * (center[:, 0] < transform_image.shape[1]) * (center[:, 1] > 0) * (center[:, 1] < transform_image.shape[0])
+            transform_annotations = transform_annotations[annotations_mask, :]
+            return transform_image, transform_annotations
 
         return image, annotations
 
     def random_enhance_group_entry(self, image):
         # randomly transform both image and annotations
         if self.enhance_generator and self.training:
-            image = self.enhance_generator.random_enhance(image)
-
+            enhanced_image = self.enhance_generator.random_enhance(image)
+            return enhanced_image
             # Transform the bounding boxes in the annotations
         return image
 
@@ -137,13 +142,26 @@ class Generator(object):
 
     def preprocess_group_entry(self, image, annotations):
 
-        image, annotations = self.random_transform_group_entry(image, annotations)
+        transform_image, transform_annotations = self.random_transform_group_entry(image, annotations)
 
-        image, annotations = self.resize_image(image, annotations, self.input_shape)
+        resized_image, resized_annotations = self.resize_image(transform_image, transform_annotations.copy(), self.input_shape)
 
-        image = self.random_enhance_group_entry(image)
+        enhanced_image = self.random_enhance_group_entry(resized_image)
 
-        return image, annotations
+        if self.visualize:
+               annots = [np.concatenate((a[:, 0:4], np.ones_like(a[:, 4:5]), a[:, 4:5]), axis=-1) for a in [annotations, transform_annotations, resized_annotations]]
+               data = {
+		   'original': [image, annots[0]],
+		   'transform': [transform_image, annots[1]],
+		   'resized': [resized_image, annots[2]],
+		   'enhanced': [enhanced_image, annots[2]]
+		}
+               draw(
+		  data    = data,
+		  classes = self.classes
+                )
+
+        return enhanced_image, resized_annotations
 
     def preprocess_group(self, image_group, annotations_group):
         for index, (image, annotations) in enumerate(zip(image_group, annotations_group)):
@@ -171,7 +189,6 @@ class Generator(object):
                       else [[order[x] for x in range(i, i + self.batch_size)] for i in range(0, self.batch_size * (self.size() // self.batch_size), self.batch_size)]
 
     def compute_y_true(self, true_boxes):
-            #pdb.set_trace()
             if self.training == False:
                 computed_true_boxes = []
                 for boxes in true_boxes:
@@ -205,7 +222,7 @@ class Generator(object):
             anchor_maxes = anchors / 2.
             anchor_mins = -anchor_maxes
 
-            valid_mask = boxes_wh[..., 0] > 0 
+            valid_mask = boxes_wh[..., 0] > 0
 
             for image_index in range(num_images):
 

@@ -17,7 +17,7 @@ for data in dataset:
                 listdir = os.listdir(root)
                 for filename in listdir:
                         with open(os.path.join(root, filename), 'r') as annot:
-                                image_path = os.path.join('yicam', data, 'images', filename)[:-4] + '.jpeg'
+                                image_path = os.path.join('yicam', data, 'images', filename)[:-4] + '.jpg'
                                 boxes = ''
                                 img = cv2.imread(os.path.join(repo_dir, 'data', image_path))
                                 size = np.array(img.shape[0:2])

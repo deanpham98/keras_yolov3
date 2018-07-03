@@ -1,5 +1,7 @@
-import numpy as np
+import os
+import argparse
 
+import numpy as np
 
 class YOLO_Kmeans:
 
@@ -95,7 +97,13 @@ class YOLO_Kmeans:
 
 
 if __name__ == "__main__":
-    cluster_number = 9
-    filename = "/yolov3/data/annotations/bdd_val.txt"
-    kmeans = YOLO_Kmeans(cluster_number, filename)
+
+    parser = argparse.ArgumentParser(description='K-means clustering script to find anchor boxes.')
+    parser.add_argument('--cluster-number', help='Number of clusters.', type=int, required=False, default=9)
+    parser.add_argument('--annotaitons-filename', help='Name of annotations file.', type=str, required=True)
+    args = parser.parse_args()
+
+    annotations_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', 'data', 'annotations', args.annotations_filename)
+    assert os.path.isfile(annotations_path), 'Invalid annotations file.'
+    kmeans = YOLO_Kmeans(args.cluster_number, annotations_path)
     kmeans.txt2clusters()

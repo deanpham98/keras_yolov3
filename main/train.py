@@ -47,7 +47,7 @@ def parse_args(args):
 	parser.add_argument('--freeze-body', help='Either freeze last all but last 3 layers or darknet53 feature extractor.', type=str, required=False, default='all')
 	parser.add_argument('--anchors-file', help='Name of file of clustered prior bounding boxes.', type=str, required=False, default=None)
 	parser.add_argument('--no-mAP', help='Whether to monitor mAP or val_loss.', action="store_true")
-
+	parser.add_argument('--initial-epoch', help='Initial epoch to start training.', type=int, required=False, default=0)
 
 	return parser.parse_args(args)
 
@@ -55,8 +55,8 @@ def get_session():
 
 	config = tf.ConfigProto()
 	config.log_device_placement = False
-	config.gpu_options.allow_growth = True
-	config.gpu_options.per_process_gpu_memory_fraction = 0.6
+#	config.gpu_options.allow_growth = True
+	config.gpu_options.per_process_gpu_memory_fraction = 0.5
 
 	return tf.Session(config=config)
 
@@ -85,10 +85,10 @@ def create_generators(args):
 
 	if not args.no_enhance:
 		enhance_generator = random_enhance_generator(
-                brightness_range = (0.5, 1.8),
-                contrast_range   = (0.5, 1.0),
-                sharpness_range  = (0.5, 1.5),
-		hue_range        = (-0.5, 0.5),
+                brightness_range = (0.3, 2.0),
+                contrast_range   = (0.4, 1.0),
+                sharpness_range  = (0.3, 2.0),
+		hue_range        = (-0.8, 0.8),
 		sat              = 2.0,
 		val              = 2.0
             )
@@ -124,7 +124,7 @@ def create_callbacks(args, infer_model, validation_generator):
 
 	if args.tensorboard:
 		tensorboard_callback = TensorBoard(
-		log_dir                = os.path.join(os.path.dirname(__file__), '..', 'models', 'logs', time.strftime("%d_%m_%Y_%H_%M_%S")),
+		log_dir                = os.path.join(os.path.dirname(__file__), '..', 'model_data', 'logs', time.strftime("%d_%m_%Y_%H_%M_%S")),
 		batch_size             = args.batch_size,
                 write_graph            = True,
                 write_grads            = True,
@@ -143,7 +143,7 @@ def create_callbacks(args, infer_model, validation_generator):
 			metrics_callback = Metrics(
 	                    generator      = validation_generator,
 			    tensorboard    = tensorboard_callback,
-		            filepath       = os.path.join('..', 'models', 'weights', '{epoch:03d}-{mAP:.5f}.weights'),
+		            filepath       = os.path.join('..', 'model_data', 'weights', '{epoch:03d}-{mAP:.5f}.hdf5'),
 		            save_best_only = False
 	                )
 
@@ -166,7 +166,8 @@ def train(args, model, train_generator, callbacks):
 		 steps_per_epoch  = args.steps,
 		 epochs           = args.epochs,
 	         verbose          = 1,
-	         callbacks        = callbacks
+	         callbacks        = callbacks,
+		 initial_epoch    = args.initial_epoch
         )
 
 def main(args=None):
@@ -196,7 +197,7 @@ def main(args=None):
 
         model.compile(
 		 loss      = {'yolo_loss': (lambda y_true, y_pred : y_pred)},
-		 optimizer = adam(lr=0.00025, decay = 0.00133)
+		 optimizer = adam(lr=0.0005, decay = 0.00133)
 	    )
 
         train(args, model, train_generator, callbacks)

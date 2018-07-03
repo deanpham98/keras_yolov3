@@ -15,7 +15,7 @@ from .metrics import evaluate
 class SaveWeights(keras.callbacks.Callback):
 	def __init__ (self, infer_model):
 		self.infer_model  = infer_model
-		self.weights_path = os.path.join(os.path.dirname(__file__), '..', 'models', 'weights')
+		self.weights_path = os.path.join(os.path.dirname(__file__), '..', 'model_data', 'weights')
 
 		super(SaveWeights, self).__init__()
 
@@ -156,6 +156,10 @@ class Metrics(keras.callbacks.Callback):
             summary_value = summary.value.add()
             summary_value.simple_value = self.mAP
             summary_value.tag = "mAP"
+            for label, AP in average_precisions.items():
+                 summary_value = summary.value.add()
+                 summary_value.simple_value = AP
+                 summary_value.tag = self.generator.label_to_name(label)
             self.tensorboard.writer.add_summary(summary, epoch)
 
         logs['mAP'] = self.mAP
@@ -171,8 +175,8 @@ class Metrics(keras.callbacks.Callback):
                 else:
                     if self.monitor_op(current, self.best):
                         if self.verbose > 0:
-                            print('\nEpoch %05d: %s improved from %0.5f to \%0.5f, saving model to %s' % (epoch+1, self.monitor, self.best, current, filepath))
-                        self.best = current
+                            print('\nEpoch %05d: %s improved from %0.5f to \%0.5f, saving model to %s' % (epoch+1, self.monitor, self.best, current, filepath))                        
+                            self.best = current
                         if self.save_weights_only:
                             self.model.save_weights(filepath, overwrite=True)
                         else:
@@ -192,3 +196,4 @@ class Metrics(keras.callbacks.Callback):
         if self.verbose == 1:
             for label, average_precision in average_precisions.items():
                 print(self.generator.label_to_name(label), '{:.4f}'.format(average_precision))
+
