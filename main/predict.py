@@ -69,7 +69,7 @@ class YOLO(object):
 		return anchors
 
 	def generate(self):
-		assert self.weights_path.endswith('.weights'), 'Making sure you got the right standard of weights file extension.'
+		assert self.weights_path.endswith('.hdf5'), 'Making sure you got the right standard of weights file extension.'
 
 		self.yolo_model, _ = yolo_training(num_classes=len(self.class_names), weights_path=self.weights_path, freeze_body='all')
 
@@ -255,20 +255,23 @@ def main(args=None):
 
 		if opt == 'i':
 			images_dir = input('Images directory name to generate data: ')
-			images_path = os.path.join(os.path.dirname(__file__), '..', 'data', 'generated_data', images_dir)
+			images_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', 'data', 'generated_data', images_dir)
 			assert os.path.isdir(images_path), 'Invalid images path.'
+			data = ''
 			for i, image in enumerate(os.listdir(images_path)):
 				print('\rImage detecting: {}/{}'.format(i, len(os.listdir(images_path))), end='')
 				img = Image.fromarray(cv2.imread(os.path.join(images_path, image)))
-				data = data + '{}.jpg {},{}{}\n'.format(image, frame_w, frame_h, yolo.detect(img, generate_data=True))
+				data = data + '{} {},{}{}\n'.format(image, img.size[0], img.size[1], yolo.detect(img, generate_data=True))
 			with open(images_path + '.txt', 'a') as file:
 				file.write(data)
+			output_path = images_path
+			output_dir = images_dir
 		elif opt == 'v':
 			videos_dir = input('Videos directory name to generate data: ')
-			videos_path = os.path.join(os.path.dirname(__file__), '..', 'data', 'videos', videos_dir)
+			videos_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', 'data', 'videos', videos_dir)
 			assert os.path.isdir(videos_path), 'Invalid videos path.'
 			output_dir = input('Output directory name to save generated data: ')
-			output_path = os.path.join(os.path.dirname(__file__), '..', 'data', 'generated_data', output_dir)
+			output_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', 'data', 'generated_data', output_dir)
 			if os.path.exists(output_path):
 				shutil.rmtree(output_path)
 			os.mkdir(output_path)
@@ -297,8 +300,6 @@ def main(args=None):
 
 				with open(output_path + '.txt', 'a') as file:
 					file.write(data)
-		output_path = images_path if output_path is None else output_path
-		output_dir = images_dir if output_dir is None else output_dir
 		categories = {i: line.strip('\n') for i, line in enumerate(open(yolo.classes_path).readlines())}
 		yolo.close_session()
 		databaseSrc = 'YOLOv3-labeled'
@@ -310,7 +311,7 @@ def main(args=None):
 		for line in lines:
 			line = line.split()
 			filename = line[0][:-4]
-			localImgPath = os.path.join(os.path.dirname(os.path.abspath(__file__)), foldername, line[0])
+			localImgPath = os.path.join(output_path, filename)
 			imgSize = tuple(int(i) for i in line[1].split(',')) + (3,)
 			writer = PascalVocWriter(foldername, filename, imgSize, databaseSrc, localImgPath)
 			for bbox in line[2:]:
